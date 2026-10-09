@@ -1,12 +1,39 @@
+export class ApiError extends Error {
+  constructor(status, detail) {
+    const message = typeof detail === "string" ? detail : detail?.message;
+    super(message || `Request failed (${status})`);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 async function request(path, options = {}) {
   const resp = await fetch(`/api${path}`, options);
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
-    throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+    // FastAPI validation errors arrive as a list of {msg} objects.
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((d) => d.msg).join("; ")
+      : body.detail;
+    throw new ApiError(resp.status, detail || resp.statusText);
   }
   return resp.status === 204 ? null : resp.json();
 }
 
+function query(params) {
+  const entries = Object.entries(params).filter(([, v]) => v !== "" && v != null);
+  return entries.length ? `?${new URLSearchParams(entries)}` : "";
+}
+
 export const api = {
   health: () => request("/health"),
+  search: (q, limit = 20) => request(`/search${query({ q, limit })}`),
+  listPapers: (filters = {}) => request(`/papers${query(filters)}`),
+  savePaper: (paper) =>
+    request("/papers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(paper),
+    }),
+  deletePaper: (id) => request(`/papers/${id}`, { method: "DELETE" }),
 };
