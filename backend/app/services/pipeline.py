@@ -1,8 +1,10 @@
-"""Getting a PDF into a paper: download or upload → store → extract → chunk.
+"""Getting a PDF into a paper: download or upload → store → extract → chunk → embed.
 
 A paper's `status` tracks this: no_pdf → downloading → processing → ready, or
 `failed` when the PDF has no usable text. `status_detail` says why in words a
-user can act on.
+user can act on. A paper is ready once its text is chunked; the chunks are then
+embedded in the background (about 0.2 s each on a CPU), and a question asked
+before that finishes embeds the rest itself.
 """
 
 import logging
@@ -16,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Chunk, Paper
-from app.services import http
+from app.services import embeddings, http, retrieval
 from app.services.library import DuplicateIndex, normalize_doi
 from app.services.llm import LLMError, LLMProvider
 from app.services.metadata import ExtractedMetadata, extract_metadata, llm_metadata, lookup
@@ -73,6 +75,7 @@ def ingest(session: Session, paper: Paper, data: bytes, extracted: ExtractedPdf 
         for i, c in enumerate(extracted.chunks)
     ]
     paper.summary = None  # it described the old text
+    paper.messages = []  # so did the Q&A thread, and its citations point at old chunks
     if paper.chunks:
         paper.status, paper.status_detail = "ready", None
     elif not extracted.has_text:
@@ -189,6 +192,7 @@ def download_pdf(paper_id: int) -> None:
             paper.status = "processing"
             session.commit()
             ingest(session, paper, data)
+            embed(session, paper)
         except (DownloadError, PdfError) as exc:
             paper.status = "no_pdf"
             paper.status_detail = f"The open-access PDF couldn't be used: {exc}. {UPLOAD_HINT}"
@@ -200,6 +204,25 @@ def download_pdf(paper_id: int) -> None:
                 paper.status = "failed"
                 paper.status_detail = f"Processing the PDF failed unexpectedly. {UPLOAD_HINT}"
                 session.commit()
+
+
+def embed(session: Session, paper: Paper) -> None:
+    """Embed `paper`'s chunks for Q&A. A failure only defers the work to the first question."""
+    try:
+        retrieval.ensure_embeddings(session, paper)
+    except embeddings.EmbeddingError as exc:
+        log.warning("Embedding paper %s failed, deferring to the first question: %s", paper.id, exc)
+    except Exception:
+        # e.g. the PDF was replaced meanwhile, deleting the chunks being embedded
+        log.exception("Embedding paper %s failed", paper.id)
+        session.rollback()
+
+
+def embed_paper(paper_id: int) -> None:
+    """Background task: embed a freshly processed paper so its first question doesn't wait."""
+    with SessionLocal() as session:
+        if (paper := session.get(Paper, paper_id)) is not None:
+            embed(session, paper)
 
 
 def fetch_pdf(client: httpx.Client, url: str) -> bytes:

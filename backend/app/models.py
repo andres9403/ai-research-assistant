@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -37,6 +37,9 @@ class Paper(Base):
     summary: Mapped["Summary | None"] = relationship(
         back_populates="paper", cascade="all, delete-orphan", uselist=False
     )
+    messages: Mapped[list["ChatMessage"]] = relationship(
+        back_populates="paper", cascade="all, delete-orphan", order_by="ChatMessage.id"
+    )
 
     @property
     def has_pdf(self) -> bool:
@@ -56,6 +59,8 @@ class Chunk(Base):
     page_start: Mapped[int] = mapped_column(Integer)
     page_end: Mapped[int] = mapped_column(Integer)
     n_tokens: Mapped[int] = mapped_column(Integer)
+    # float32 vector from the local embedding model; null until embedded
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary)
 
     paper: Mapped[Paper] = relationship(back_populates="chunks")
 
@@ -78,3 +83,23 @@ class Summary(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     paper: Mapped[Paper] = relationship(back_populates="summary")
+
+
+class ChatMessage(Base):
+    """One turn of a paper's Q&A thread. Assistant turns carry the passages they cite."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    paper_id: Mapped[int] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant
+    content: Mapped[str] = mapped_column(Text)
+    # [{n, chunk_id, section, page_start, page_end, text}]; a snapshot, so it outlives the chunk
+    citations: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    provider: Mapped[str | None] = mapped_column(String(16))
+    model: Mapped[str | None] = mapped_column(String(64))
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    paper: Mapped[Paper] = relationship(back_populates="messages")

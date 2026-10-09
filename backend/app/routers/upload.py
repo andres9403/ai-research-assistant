@@ -1,5 +1,5 @@
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.db import get_session
@@ -33,6 +33,7 @@ def metadata_llm(provider: str | None) -> llm.LLMProvider | None:
 @router.post("/upload", response_model=PaperOut, status_code=201)
 def upload_pdf(
     response: Response,
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     provider: str | None = Form(None),
     session: Session = Depends(get_session),
@@ -56,11 +57,13 @@ def upload_pdf(
         ) from exc
     if not created:
         response.status_code = 200
+    background.add_task(pipeline.embed_paper, paper.id)
     return paper
 
 
 @router.post("/{paper_id}/pdf", response_model=PaperOut)
 def attach_pdf(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     provider: str | None = Form(None),
     paper: Paper = Depends(get_paper_or_404),
@@ -78,4 +81,5 @@ def attach_pdf(
         pipeline.attach(session, paper, data, metadata_llm(provider))
     except PdfError as exc:
         raise HTTPException(422, str(exc)) from exc
+    background.add_task(pipeline.embed_paper, paper.id)
     return paper

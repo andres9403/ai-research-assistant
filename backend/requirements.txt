@@ -10,3 +10,5 @@ python-multipart>=0.0.9
 anthropic>=1.13,<2
 openai>=3.27,<4
 httpx2>=2.0  # what the LLM SDKs use; tests mock it directly
+fastembed>=0.5,<1  # local ONNX embeddings for Q&A retrieval
+numpy>=1.26

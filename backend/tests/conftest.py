@@ -15,14 +15,18 @@ os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["OPENAI_API_KEY"] = ""
 os.environ["LLM_PROVIDER"] = "anthropic"
 
+import re  # noqa: E402
+import zlib  # noqa: E402
+
 import httpx  # noqa: E402
+import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import http, llm  # noqa: E402
+from app.services import embeddings, http, llm  # noqa: E402
 
 assert engine.url.database == TEST_DB_PATH, f"tests must not use {engine.url}"
 
@@ -105,4 +109,36 @@ def fake_llm(monkeypatch):
     """Makes a fake provider the only configured LLM (as "anthropic")."""
     fake = FakeLLM()
     monkeypatch.setattr(llm, "available", lambda: {fake.name: fake})
+    return fake
+
+
+class FakeEmbedder:
+    """Stands in for the local embedding model: hashed bag-of-words vectors, so texts
+    that share words are similar. Nothing is downloaded. Every call is recorded."""
+
+    dim = 64
+    STOPWORDS = {"the", "and", "how", "what", "does", "this", "that", "are", "for", "our", "with"}
+
+    def __init__(self):
+        self.calls: list[list[str]] = []
+        self.error: Exception | None = None
+
+    def embed(self, texts):
+        self.calls.append(list(texts))
+        if self.error:
+            raise self.error
+        out = np.zeros((len(texts), self.dim), dtype=np.float32)
+        for row, text in zip(out, texts):
+            for word in re.findall(r"[a-z]{3,}", text.removeprefix(embeddings.QUERY_PREFIX).lower()):
+                if word not in self.STOPWORDS:
+                    row[zlib.crc32(word.encode()) % self.dim] += 1
+            if (norm := np.linalg.norm(row)) > 0:
+                row /= norm
+        return out
+
+
+@pytest.fixture(autouse=True)
+def fake_embedder(monkeypatch):
+    fake = FakeEmbedder()
+    monkeypatch.setattr(embeddings, "get_embedder", lambda: fake)
     return fake

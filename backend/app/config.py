@@ -28,5 +28,10 @@ class Settings(BaseSettings):
     def pdf_dir(self) -> Path:
         return self.data_dir / "pdfs"
 
+    @property
+    def model_dir(self) -> Path:
+        """Where the local embedding model is downloaded on first use."""
+        return self.data_dir / "models"
+
 
 settings = Settings()

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, BUSY_STATUSES } from "../api.js";
+import ChatPanel from "../components/ChatPanel.jsx";
 import { SOURCE_LABELS, formatAuthors } from "../components/PaperCard.jsx";
 import PdfStatus from "../components/PdfStatus.jsx";
 import SummaryPanel from "../components/SummaryPanel.jsx";
@@ -199,6 +200,7 @@ export default function PaperDetailView({ id, uploaded }) {
         <div className="subtabs" role="tablist">
           {[
             ["summary", "Summary"],
+            ["chat", "Chat"],
             ["text", "Extracted text"],
           ].map(([name, label]) => (
             <button
@@ -212,13 +214,17 @@ export default function PaperDetailView({ id, uploaded }) {
             </button>
           ))}
         </div>
-        {tab === "summary" ? (
-          <SummaryPanel paper={paper} version={tick} />
-        ) : chunks.length > 0 ? (
-          <FullText paper={paper} chunks={chunks} />
-        ) : (
-          <p className="muted">No text has been extracted yet. Upload the PDF to see it here.</p>
-        )}
+        {tab === "summary" && <SummaryPanel paper={paper} version={tick} />}
+        {/* Kept mounted, so a draft or a pending answer survives switching tabs. */}
+        <div hidden={tab !== "chat"}>
+          <ChatPanel paper={paper} version={tick} />
+        </div>
+        {tab === "text" &&
+          (chunks.length > 0 ? (
+            <FullText paper={paper} chunks={chunks} />
+          ) : (
+            <p className="muted">No text has been extracted yet. Upload the PDF to see it here.</p>
+          ))}
       </div>
     </section>
   );

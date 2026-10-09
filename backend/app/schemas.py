@@ -117,3 +117,48 @@ class SummaryOut(BaseModel):
     @classmethod
     def assume_utc(cls, value: datetime) -> datetime:
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+class ChatQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("question")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Question is empty")
+        return value
+
+
+class Citation(BaseModel):
+    n: int  # the [n] marker in the answer
+    chunk_id: int
+    section: str
+    page_start: int
+    page_end: int
+    text: str  # the cited passage, as it was when the answer was written
+
+
+class ChatMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: Literal["user", "assistant"]
+    content: str
+    citations: list[Citation] = []
+    provider: str | None = None
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def assume_utc(cls, value: datetime) -> datetime:
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+class ChatExchangeOut(BaseModel):
+    question: ChatMessageOut
+    answer: ChatMessageOut
