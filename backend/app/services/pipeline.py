@@ -25,7 +25,6 @@ log = logging.getLogger(__name__)
 
 DOWNLOAD_TIMEOUT = 30.0
 BUSY = ("downloading", "processing")
-HAS_PDF = ("ready", *BUSY)
 UPLOAD_HINT = "Upload the PDF to enable AI features."
 
 
@@ -113,7 +112,9 @@ def upload(
     probe = Paper(**{**fields, "source": meta.external_source})
     if (existing_id := DuplicateIndex(session).match(probe)) is not None:
         existing = session.get(Paper, existing_id)
-        if existing.status in HAS_PDF:
+        # A stored PDF counts even when it failed processing; replacing it is
+        # what the explicit attach endpoint is for.
+        if existing.has_pdf or existing.status in BUSY:
             raise DuplicatePdf(existing.id)
         fill_missing(existing, meta)
         ingest(session, existing, data, extracted)
@@ -156,7 +157,7 @@ def download_pdf(paper_id: int) -> None:
         if paper is None or paper.status != "downloading":
             return
         try:
-            with http.make_client(timeout=DOWNLOAD_TIMEOUT) as client:
+            with http.make_download_client(timeout=DOWNLOAD_TIMEOUT) as client:
                 data = fetch_pdf(client, paper.pdf_url)
             if session.get(Paper, paper_id, populate_existing=True) is None:
                 return  # deleted while downloading
@@ -187,6 +188,8 @@ def fetch_pdf(client: httpx.Client, url: str) -> bytes:
                 data += part
                 if len(data) > MAX_PDF_BYTES:
                     raise DownloadError("the file is larger than 50 MB")
+    except http.BlockedAddress as exc:
+        raise DownloadError("the link points to a private or local network address") from exc
     except httpx.HTTPStatusError as exc:
         raise DownloadError(f"the server answered HTTP {exc.response.status_code}") from exc
     except httpx.HTTPError as exc:

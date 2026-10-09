@@ -64,10 +64,10 @@ class FakeNetwork:
 @pytest.fixture(autouse=True)
 def network(monkeypatch):
     fake = FakeNetwork()
-    monkeypatch.setattr(
-        http,
-        "make_client",
-        lambda timeout=10.0: httpx.Client(transport=httpx.MockTransport(fake), follow_redirects=True),
-    )
+    def mock_client(timeout=10.0):
+        return httpx.Client(transport=httpx.MockTransport(fake), follow_redirects=True)
+
+    monkeypatch.setattr(http, "make_client", mock_client)
+    monkeypatch.setattr(http, "make_download_client", mock_client)
     yield fake
     assert not fake.unexpected, f"unexpected HTTP requests: {fake.unexpected}"

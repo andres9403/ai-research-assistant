@@ -156,6 +156,16 @@ def test_scanned_upload_is_kept_but_marked_failed(client):
     assert paper["has_pdf"] is True
 
 
+def test_reuploading_a_failed_pdf_is_a_duplicate(client):
+    first = upload(client, make_scanned_pdf(), name="my_scanned-paper.pdf").json()
+    assert first["status"] == "failed"
+
+    resp = upload(client, make_scanned_pdf(), name="my_scanned-paper.pdf")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["paper_id"] == first["id"]
+    assert len(client.get("/api/papers").json()) == 1
+
+
 @pytest.mark.parametrize(
     "data, status",
     [(b"", 422), (b"<html></html>", 422), (b"%PDF-1.4 garbage", 422)],
