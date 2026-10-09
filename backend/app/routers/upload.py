@@ -1,12 +1,12 @@
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.models import Paper
 from app.routers.papers import get_paper_or_404
 from app.schemas import PaperOut
-from app.services import pipeline
+from app.services import llm, pipeline
 from app.services.http import get_http_client
 from app.services.pdf import MAX_PDF_BYTES, PdfError
 
@@ -26,17 +26,24 @@ def read_pdf_upload(file: UploadFile) -> bytes:
 def upload_pdf(
     response: Response,
     file: UploadFile = File(...),
+    provider: str | None = Form(None),
     session: Session = Depends(get_session),
     client: httpx.Client = Depends(get_http_client),
 ) -> Paper:
     """Create a library paper from a PDF, extracting its metadata.
 
+    `provider` picks the LLM for the first-page metadata pass; without a
+    configured LLM the upload still works on heuristics and lookups alone.
     Answers 200 instead of 201 when the PDF was attached to a matching paper
     that was already saved without one.
     """
     data = read_pdf_upload(file)
     try:
-        paper, created = pipeline.upload(session, data, file.filename, client)
+        model = llm.resolve(provider)
+    except llm.LLMNotConfigured:
+        model = None
+    try:
+        paper, created = pipeline.upload(session, data, file.filename, client, model)
     except PdfError as exc:
         raise HTTPException(422, str(exc)) from exc
     except pipeline.DuplicatePdf as exc:

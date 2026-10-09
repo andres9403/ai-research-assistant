@@ -18,7 +18,8 @@ from app.db import SessionLocal
 from app.models import Chunk, Paper
 from app.services import http
 from app.services.library import DuplicateIndex, normalize_doi
-from app.services.metadata import ExtractedMetadata, extract_metadata, lookup
+from app.services.llm import LLMError, LLMProvider
+from app.services.metadata import ExtractedMetadata, extract_metadata, llm_metadata, lookup
 from app.services.pdf import MAX_PDF_BYTES, ExtractedPdf, PdfError, extract
 
 log = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ def ingest(session: Session, paper: Paper, data: bytes, extracted: ExtractedPdf 
         )
         for i, c in enumerate(extracted.chunks)
     ]
+    paper.summary = None  # it described the old text
     if paper.chunks:
         paper.status, paper.status_detail = "ready", None
     elif not extracted.has_text:
@@ -93,15 +95,26 @@ def fill_missing(paper: Paper, meta: ExtractedMetadata) -> None:
 
 
 def upload(
-    session: Session, data: bytes, filename: str | None, client: httpx.Client
+    session: Session,
+    data: bytes,
+    filename: str | None,
+    client: httpx.Client,
+    llm: LLMProvider | None = None,
 ) -> tuple[Paper, bool]:
     """Turn an uploaded PDF into a library paper. Returns (paper, created).
 
     If the PDF is a paper already saved without a PDF, it is attached to that
-    paper instead of creating a duplicate.
+    paper instead of creating a duplicate. `llm`, when given, reads page one to
+    correct the heuristic metadata; if that call fails the heuristics stand.
     """
     extracted = extract(data)
-    meta = lookup(client, extract_metadata(extracted), settings.semantic_scholar_api_key)
+    meta = extract_metadata(extracted)
+    if llm is not None:
+        try:
+            meta = llm_metadata(llm, extracted, meta)
+        except LLMError as exc:
+            log.warning("LLM metadata pass failed, keeping heuristic metadata: %s", exc)
+    meta = lookup(client, meta, settings.semantic_scholar_api_key)
 
     fields = meta.as_paper_fields()
     fields["title"] = fields["title"] or _title_from_filename(filename)

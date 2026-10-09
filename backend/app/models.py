@@ -34,6 +34,9 @@ class Paper(Base):
     chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="paper", cascade="all, delete-orphan", order_by="Chunk.ordinal"
     )
+    summary: Mapped["Summary | None"] = relationship(
+        back_populates="paper", cascade="all, delete-orphan", uselist=False
+    )
 
     @property
     def has_pdf(self) -> bool:
@@ -55,3 +58,23 @@ class Chunk(Base):
     n_tokens: Mapped[int] = mapped_column(Integer)
 
     paper: Mapped[Paper] = relationship(back_populates="chunks")
+
+
+class Summary(Base):
+    """The cached structured summary of a paper; one per paper, replaced on regenerate."""
+
+    __tablename__ = "summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    paper_id: Mapped[int] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(64))
+    content: Mapped[dict] = mapped_column(JSON)  # tldr, problem, approach, data, results, limitations
+    sections: Mapped[list[dict]] = mapped_column(JSON)  # what was sent: [{section, page_start, page_end}]
+    input_tokens: Mapped[int] = mapped_column(Integer)
+    output_tokens: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    paper: Mapped[Paper] = relationship(back_populates="summary")

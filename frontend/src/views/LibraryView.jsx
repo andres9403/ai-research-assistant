@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, BUSY_STATUSES } from "../api.js";
 import PaperCard from "../components/PaperCard.jsx";
 import UploadButton from "../components/UploadButton.jsx";
+import { useLlm } from "../llm.jsx";
 
 const EMPTY_FILTERS = { q: "", source: "", year_from: "", year_to: "" };
 
@@ -10,6 +11,7 @@ export default function LibraryView() {
   const [state, setState] = useState({ status: "loading", papers: [] });
   const [upload, setUpload] = useState({ status: "idle" });
   const [tick, setTick] = useState(0); // bumping it reloads the list
+  const llm = useLlm();
 
   // While any PDF is downloading or processing, reload every 2 s to show progress.
   const busy = state.papers.some((p) => BUSY_STATUSES.includes(p.status));
@@ -41,7 +43,7 @@ export default function LibraryView() {
   async function uploadPdf(file) {
     setUpload({ status: "uploading", name: file.name });
     try {
-      const paper = await api.uploadPdf(file);
+      const paper = await api.uploadPdf(file, llm.provider);
       window.location.hash = `#/paper/${paper.id}?uploaded`;
     } catch (err) {
       setUpload({ status: "error", error: err.message, paperId: err.detail?.paper_id });
@@ -68,7 +70,9 @@ export default function LibraryView() {
           {upload.status === "uploading" ? `Extracting ${upload.name}…` : "Upload PDF"}
         </UploadButton>
         <span className="muted">
-          Text and metadata are extracted locally; the PDF never leaves your machine.
+          {llm.provider
+            ? "Text is extracted locally. Only page one's text is sent to the AI model, to read the title and authors."
+            : "Text and metadata are extracted locally; the PDF never leaves your machine."}
         </span>
       </div>
       {upload.status === "error" && (

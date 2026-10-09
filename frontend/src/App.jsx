@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.js";
+import { LlmProvider, ProviderSelect } from "./llm.jsx";
 import LibraryView from "./views/LibraryView.jsx";
 import PaperDetailView from "./views/PaperDetailView.jsx";
 import SearchView from "./views/SearchView.jsx";
@@ -36,31 +37,34 @@ export default function App() {
   const activeTab = route.view === "paper" ? "library" : route.view;
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>AI Research Assistant</h1>
-        <nav className="tabs">
-          {Object.entries(VIEWS).map(([name, label]) => (
-            <a key={name} href={`#/${name}`} className={name === activeTab ? "tab active" : "tab"}>
-              {label}
-            </a>
-          ))}
-        </nav>
-        <span className={`badge badge-${backend.state}`}>
-          {backend.state === "ok" && "backend OK"}
-          {backend.state === "checking" && "checking backend…"}
-          {backend.state === "down" && `backend unreachable: ${backend.error}`}
-        </span>
-      </header>
-      <main className="main">
-        {route.view === "paper" ? (
-          <PaperDetailView key={route.paperId} id={route.paperId} uploaded={route.uploaded} />
-        ) : route.view === "library" ? (
-          <LibraryView />
-        ) : (
-          <SearchView />
-        )}
-      </main>
-    </div>
+    <LlmProvider>
+      <div className="app">
+        <header className="header">
+          <h1>AI Research Assistant</h1>
+          <nav className="tabs">
+            {Object.entries(VIEWS).map(([name, label]) => (
+              <a key={name} href={`#/${name}`} className={name === activeTab ? "tab active" : "tab"}>
+                {label}
+              </a>
+            ))}
+          </nav>
+          <ProviderSelect />
+          <span className={`badge badge-${backend.state}`}>
+            {backend.state === "ok" && "backend OK"}
+            {backend.state === "checking" && "checking backend…"}
+            {backend.state === "down" && `backend unreachable: ${backend.error}`}
+          </span>
+        </header>
+        <main className="main">
+          {route.view === "paper" ? (
+            <PaperDetailView key={route.paperId} id={route.paperId} uploaded={route.uploaded} />
+          ) : route.view === "library" ? (
+            <LibraryView />
+          ) : (
+            <SearchView />
+          )}
+        </main>
+      </div>
+    </LlmProvider>
   );
 }

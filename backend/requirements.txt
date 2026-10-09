@@ -7,3 +7,6 @@ httpcore>=1.0
 pytest>=8.0
 pymupdf>=1.24
 python-multipart>=0.0.9
+anthropic>=1.13,<2
+openai>=3.27,<4
+httpx2>=2.0  # what the LLM SDKs use; tests mock it directly

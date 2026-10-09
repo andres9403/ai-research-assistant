@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import SessionLocal, init_db
-from app.routers import health, papers, search, upload
+from app.routers import ai, health, papers, search, upload
+from app.routers import settings as settings_router
 from app.services.pipeline import recover_interrupted
 
 
@@ -28,3 +29,5 @@ app.include_router(health.router)
 app.include_router(search.router)
 app.include_router(upload.router)
 app.include_router(papers.router)
+app.include_router(ai.router)
+app.include_router(settings_router.router)
