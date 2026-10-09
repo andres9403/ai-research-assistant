@@ -104,6 +104,13 @@ def test_semantic_scholar_results_are_normalised():
     assert request.url.params["limit"] == "5"
 
 
+def test_s2_arxiv_papers_without_open_access_link_get_arxiv_pdf():
+    item = {**S2_RESPONSE["data"][0], "openAccessPdf": None}
+    service = make_service(s2=lambda r: httpx.Response(200, json={"data": [item]}))
+    (paper,) = service.search("attention", 5).results
+    assert paper.pdf_url == "https://arxiv.org/pdf/1706.03762"
+
+
 @pytest.mark.parametrize(
     "s2",
     [
@@ -132,6 +139,14 @@ def test_falls_back_to_arxiv(s2):
     assert calls[-1].url.params["max_results"] == "3"
 
 
+def test_arxiv_query_drops_stopwords_it_cannot_match():
+    calls = []
+    make_service(arxiv=arxiv_ok, calls=calls).search_arxiv("Attention is all you need", 5)
+    assert calls[-1].url.params["search_query"] == "all:Attention AND all:need"
+    make_service(arxiv=arxiv_ok, calls=calls).search_arxiv("the of", 5)
+    assert calls[-1].url.params["search_query"] == "all:the AND all:of"  # nothing else to search
+
+
 def test_arxiv_error_entries_are_skipped():
     error_feed = b"""<feed xmlns="http://www.w3.org/2005/Atom">
       <entry><id>http://arxiv.org/api/errors#incorrect_id</id><title>Error</title></entry>
@@ -156,7 +171,8 @@ def test_search_endpoint_returns_results(client, use_service):
     assert all(r["saved_id"] is None for r in body["results"])
 
 
-def test_search_endpoint_marks_saved_papers(client, use_service):
+def test_search_endpoint_marks_saved_papers(client, use_service, network):
+    network.on("arxiv.org", lambda r: httpx.Response(404))  # saving starts a PDF download
     use_service(make_service(s2=s2_ok))
     first = client.get("/api/search", params={"q": "attention"}).json()["results"][0]
     saved = client.post("/api/papers", json=first).json()

@@ -12,11 +12,18 @@ from dataclasses import dataclass
 import httpx
 
 from app.config import settings
+from app.services import http
 from app.schemas import PaperCreate
 
 S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 S2_FIELDS = "paperId,title,authors,year,abstract,url,externalIds,openAccessPdf"
 ARXIV_QUERY_URL = "https://export.arxiv.org/api/query"
+
+# arXiv's index drops these, so requiring them makes a query match nothing.
+ARXIV_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it",
+    "of", "on", "or", "that", "the", "to", "was", "with", "all", "we", "you", "our",
+}
 
 ATOM = "{http://www.w3.org/2005/Atom}"
 ARXIV = "{http://arxiv.org/schemas/atom}"
@@ -70,20 +77,24 @@ class SearchService:
 
     def search_arxiv(self, query: str, limit: int) -> list[PaperCreate]:
         # AND the words together; arXiv's default OR ranks loosely related papers first.
-        words = re.findall(r"[\w-]+", query)
+        words = arxiv_terms(query)
         if not words:
             return []
-        resp = self.client.get(
-            ARXIV_QUERY_URL,
-            params={
-                "search_query": " AND ".join(f"all:{w}" for w in words),
-                "start": 0,
-                "max_results": limit,
-            },
-        )
-        resp.raise_for_status()
-        root = ET.fromstring(resp.content)
-        return [p for entry in root.iter(f"{ATOM}entry") if (p := _parse_arxiv(entry))]
+        query = " AND ".join(f"all:{w}" for w in words)
+        return query_arxiv(self.client, {"search_query": query, "max_results": limit})
+
+
+def arxiv_terms(text: str) -> list[str]:
+    words = re.findall(r"[\w-]+", text)
+    return [w for w in words if w.lower() not in ARXIV_STOPWORDS] or words
+
+
+def query_arxiv(client: httpx.Client, params: dict) -> list[PaperCreate]:
+    """Run an arXiv API query (search_query or id_list) and parse its entries."""
+    resp = client.get(ARXIV_QUERY_URL, params={"start": 0, **params})
+    resp.raise_for_status()
+    root = ET.fromstring(resp.content)
+    return [p for entry in root.iter(f"{ATOM}entry") if (p := _parse_arxiv(entry))]
 
 
 def _describe(exc: Exception) -> str:
@@ -107,7 +118,8 @@ def _parse_s2(item: dict) -> PaperCreate | None:
         year=item.get("year"),
         abstract=_clean(item.get("abstract")),
         url=item.get("url"),
-        pdf_url=pdf.get("url") or None,
+        # S2 often has no open-access link for arXiv papers it knows the id of.
+        pdf_url=pdf.get("url") or (f"https://arxiv.org/pdf/{ids['ArXiv']}" if ids.get("ArXiv") else None),
     )
 
 
@@ -144,9 +156,5 @@ def _parse_arxiv(entry: ET.Element) -> PaperCreate | None:
 
 
 def get_search_service() -> Iterator[SearchService]:
-    with httpx.Client(
-        timeout=10.0,
-        follow_redirects=True,
-        headers={"User-Agent": "ai-research-assistant/0.1"},
-    ) as client:
+    with http.make_client() as client:
         yield SearchService(client, settings.semantic_scholar_api_key)

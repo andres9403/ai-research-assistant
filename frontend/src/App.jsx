@@ -1,22 +1,23 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.js";
 import LibraryView from "./views/LibraryView.jsx";
+import PaperDetailView from "./views/PaperDetailView.jsx";
 import SearchView from "./views/SearchView.jsx";
 
-const VIEWS = {
-  search: { label: "Search", component: SearchView },
-  library: { label: "Library", component: LibraryView },
-};
+const VIEWS = { search: "Search", library: "Library" };
 
-// The view lives in the URL hash so a page refresh keeps you where you were.
-function currentView() {
-  const name = window.location.hash.replace(/^#\/?/, "");
-  return VIEWS[name] ? name : "search";
+// The view lives in the URL hash so a page refresh keeps you where you were:
+// #/search, #/library, or #/paper/<id> (with "?uploaded" right after an upload).
+function currentRoute() {
+  const path = window.location.hash.replace(/^#\/?/, "");
+  const paper = path.match(/^paper\/(\d+)(\?uploaded)?$/);
+  if (paper) return { view: "paper", paperId: Number(paper[1]), uploaded: !!paper[2] };
+  return { view: VIEWS[path] ? path : "search" };
 }
 
 export default function App() {
   const [backend, setBackend] = useState({ state: "checking" });
-  const [view, setView] = useState(currentView);
+  const [route, setRoute] = useState(currentRoute);
 
   useEffect(() => {
     api
@@ -26,20 +27,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onHashChange = () => setView(currentView());
+    const onHashChange = () => setRoute(currentRoute());
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  const View = VIEWS[view].component;
+  // The paper detail page belongs to the Library tab.
+  const activeTab = route.view === "paper" ? "library" : route.view;
 
   return (
     <div className="app">
       <header className="header">
         <h1>AI Research Assistant</h1>
         <nav className="tabs">
-          {Object.entries(VIEWS).map(([name, { label }]) => (
-            <a key={name} href={`#/${name}`} className={name === view ? "tab active" : "tab"}>
+          {Object.entries(VIEWS).map(([name, label]) => (
+            <a key={name} href={`#/${name}`} className={name === activeTab ? "tab active" : "tab"}>
               {label}
             </a>
           ))}
@@ -51,7 +53,13 @@ export default function App() {
         </span>
       </header>
       <main className="main">
-        <View />
+        {route.view === "paper" ? (
+          <PaperDetailView key={route.paperId} id={route.paperId} uploaded={route.uploaded} />
+        ) : route.view === "library" ? (
+          <LibraryView />
+        ) : (
+          <SearchView />
+        )}
       </main>
     </div>
   );

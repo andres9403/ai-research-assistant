@@ -36,4 +36,25 @@ export const api = {
       body: JSON.stringify(paper),
     }),
   deletePaper: (id) => request(`/papers/${id}`, { method: "DELETE" }),
+  getPaper: (id) => request(`/papers/${id}`),
+  updatePaper: (id, changes) =>
+    request(`/papers/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    }),
+  listChunks: (id) => request(`/papers/${id}/chunks`),
+  uploadPdf: (file) => request("/papers/upload", { method: "POST", body: pdfForm(file) }),
+  attachPdf: (id, file) => request(`/papers/${id}/pdf`, { method: "POST", body: pdfForm(file) }),
+  fetchPdf: (id) => request(`/papers/${id}/pdf/fetch`, { method: "POST" }),
+  pdfUrl: (id) => `/api/papers/${id}/pdf`,
 };
+
+function pdfForm(file) {
+  const form = new FormData();
+  form.append("file", file);
+  return form;
+}
+
+// Papers in these states change on the server; views poll until they settle.
+export const BUSY_STATUSES = ["downloading", "processing"];

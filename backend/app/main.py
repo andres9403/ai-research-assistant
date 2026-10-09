@@ -4,13 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.db import init_db
-from app.routers import health, papers, search
+from app.db import SessionLocal, init_db
+from app.routers import health, papers, search, upload
+from app.services.pipeline import recover_interrupted
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    with SessionLocal() as session:
+        recover_interrupted(session)
     yield
 
 
@@ -23,4 +26,5 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(search.router)
+app.include_router(upload.router)
 app.include_router(papers.router)

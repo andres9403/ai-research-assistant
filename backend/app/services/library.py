@@ -7,7 +7,7 @@ from sqlalchemy import String, cast, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Paper
-from app.schemas import PaperCreate
+from app.schemas import PaperCreate, PaperUpdate
 
 
 def normalize_title(title: str) -> str:
@@ -24,17 +24,26 @@ def normalize_doi(doi: str | None) -> str | None:
     return doi.lower() or None
 
 
-class DuplicateIndex:
-    """Matches papers against the library by DOI, then source id, then normalised title."""
+class DuplicatePaper(Exception):
+    def __init__(self, paper_id: int):
+        super().__init__(paper_id)
+        self.paper_id = paper_id
 
-    def __init__(self, session: Session):
+
+class DuplicateIndex:
+    """Matches papers against the library by DOI, then source id, then normalised title.
+
+    `match` accepts anything with source, external_id, doi and title attributes.
+    """
+
+    def __init__(self, session: Session, exclude_id: int | None = None):
         self.by_doi: dict[str, int] = {}
         self.by_external: dict[tuple[str, str], int] = {}
         self.by_title: dict[str, int] = {}
-        rows = session.execute(
-            select(Paper.id, Paper.source, Paper.external_id, Paper.doi, Paper.title)
-        )
-        for pid, source, external_id, doi, title in rows:
+        stmt = select(Paper.id, Paper.source, Paper.external_id, Paper.doi, Paper.title)
+        if exclude_id is not None:
+            stmt = stmt.where(Paper.id != exclude_id)
+        for pid, source, external_id, doi, title in session.execute(stmt):
             if doi := normalize_doi(doi):
                 self.by_doi.setdefault(doi, pid)
             if external_id:
@@ -42,7 +51,7 @@ class DuplicateIndex:
             if key := normalize_title(title):
                 self.by_title.setdefault(key, pid)
 
-    def match(self, paper: PaperCreate) -> int | None:
+    def match(self, paper: PaperCreate | Paper) -> int | None:
         if (doi := normalize_doi(paper.doi)) and doi in self.by_doi:
             return self.by_doi[doi]
         if paper.external_id and (paper.source, paper.external_id) in self.by_external:
@@ -60,6 +69,29 @@ def save_paper(session: Session, data: PaperCreate) -> tuple[Paper, bool]:
     session.add(paper)
     session.commit()
     return paper, True
+
+
+def update_paper(session: Session, paper: Paper, data: PaperUpdate) -> None:
+    """Apply user edits. Raises DuplicatePaper if they'd make it match another paper."""
+    changes = data.model_dump(exclude_unset=True)
+    if "title" in changes and not (changes["title"] or "").strip():
+        changes.pop("title")  # a paper always keeps a title
+    if "authors" in changes:
+        changes["authors"] = [a.strip() for a in changes["authors"] or [] if a.strip()]
+    if "doi" in changes:
+        changes["doi"] = normalize_doi(changes["doi"])
+    for field in ("title", "abstract", "url"):
+        if isinstance(changes.get(field), str):
+            changes[field] = changes[field].strip() or None
+
+    for field, value in changes.items():
+        setattr(paper, field, value)
+    if (other := DuplicateIndex(session, exclude_id=paper.id).match(paper)) is not None:
+        session.rollback()
+        raise DuplicatePaper(other)
+    if changes:
+        paper.metadata_source = "edited"
+    session.commit()
 
 
 def list_papers(
