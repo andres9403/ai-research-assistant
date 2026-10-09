@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     anthropic_model: str | None = None
     openai_api_key: str | None = None
     openai_model: str | None = None
+    llm_timeout: float = 90.0  # seconds per LLM request
     semantic_scholar_api_key: str | None = None
 
     @property

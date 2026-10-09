@@ -10,6 +10,10 @@ TEST_DB_PATH = os.path.join(TEST_DATA_DIR, "app.db")
 os.environ["DATA_DIR"] = TEST_DATA_DIR
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 os.environ["SEMANTIC_SCHOLAR_API_KEY"] = ""
+# No real LLM keys: a test that wants an LLM gets the `fake_llm` fixture.
+os.environ["ANTHROPIC_API_KEY"] = ""
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["LLM_PROVIDER"] = "anthropic"
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
@@ -18,7 +22,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import http  # noqa: E402
+from app.services import http, llm  # noqa: E402
 
 assert engine.url.database == TEST_DB_PATH, f"tests must not use {engine.url}"
 
@@ -71,3 +75,34 @@ def network(monkeypatch):
     monkeypatch.setattr(http, "make_download_client", mock_client)
     yield fake
     assert not fake.unexpected, f"unexpected HTTP requests: {fake.unexpected}"
+
+
+class FakeLLM:
+    """Stands in for an LLM provider. `answers` maps a schema name to the JSON to return,
+    or to an exception to raise; an unanswered call fails like a real LLM error.
+    Every call is recorded."""
+
+    def __init__(self, name: str = "anthropic", model: str = "fake-model"):
+        self.name = name
+        self.model = model
+        self.answers: dict[str, dict | Exception] = {}
+        self.calls: list[dict] = []
+
+    def complete_json(self, *, system, prompt, schema, schema_name, max_tokens):
+        self.calls.append(
+            {"system": system, "prompt": prompt, "schema": schema, "schema_name": schema_name}
+        )
+        answer = self.answers.get(schema_name)
+        if answer is None:
+            raise llm.LLMError(f"FakeLLM has no answer for {schema_name}")
+        if isinstance(answer, Exception):
+            raise answer
+        return llm.LLMResult(data=answer, input_tokens=1234, output_tokens=321)
+
+
+@pytest.fixture()
+def fake_llm(monkeypatch):
+    """Makes a fake provider the only configured LLM (as "anthropic")."""
+    fake = FakeLLM()
+    monkeypatch.setattr(llm, "available", lambda: {fake.name: fake})
+    return fake

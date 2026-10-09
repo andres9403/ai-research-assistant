@@ -71,3 +71,49 @@ class ChunkOut(BaseModel):
     page_end: int
     n_tokens: int
     text: str
+
+
+class LLMProviderOut(BaseModel):
+    name: str
+    label: str
+    model: str
+
+
+class LLMSettingsOut(BaseModel):
+    """Only providers with an API key are listed; `default` is None when there are none."""
+
+    default: str | None
+    providers: list[LLMProviderOut]
+
+
+class SummaryContent(BaseModel):
+    tldr: str
+    problem: str
+    approach: str
+    data: str
+    results: str
+    limitations: str
+
+
+class SummarySection(BaseModel):
+    section: str
+    page_start: int
+    page_end: int
+
+
+class SummaryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    paper_id: int
+    provider: str
+    model: str
+    content: SummaryContent
+    sections: list[SummarySection]  # the parts of the paper the summary was written from
+    input_tokens: int
+    output_tokens: int
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def assume_utc(cls, value: datetime) -> datetime:
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)

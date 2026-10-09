@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { api, BUSY_STATUSES } from "../api.js";
 import { SOURCE_LABELS, formatAuthors } from "../components/PaperCard.jsx";
 import PdfStatus from "../components/PdfStatus.jsx";
+import SummaryPanel from "../components/SummaryPanel.jsx";
 import UploadButton from "../components/UploadButton.jsx";
+import { useLlm } from "../llm.jsx";
 
 const METADATA_NOTES = {
   pdf: "Metadata was extracted from the PDF. Check it and edit anything that's wrong.",
+  llm: "Metadata was read from the PDF's first page by the AI model. Check it and edit anything that's wrong.",
   semantic_scholar: "Metadata was matched on Semantic Scholar by the paper's identifier.",
   arxiv: "Metadata was matched on arXiv by the paper's identifier.",
   edited: "Metadata edited by you.",
@@ -21,6 +24,8 @@ export default function PaperDetailView({ id, uploaded }) {
   const [editing, setEditing] = useState(false);
   const [pdfAction, setPdfAction] = useState({ status: "idle" });
   const [tick, setTick] = useState(0); // bumping it reloads the paper
+  const [tab, setTab] = useState("summary");
+  const llm = useLlm();
 
   useEffect(() => {
     let cancelled = false;
@@ -181,7 +186,7 @@ export default function PaperDetailView({ id, uploaded }) {
             <UploadButton
               className={paper.has_pdf ? "secondary" : undefined}
               busy={pdfAction.status === "working"}
-              onFile={(file) => runPdfAction(() => api.attachPdf(paper.id, file))}
+              onFile={(file) => runPdfAction(() => api.attachPdf(paper.id, file, llm.provider))}
             >
               {pdfAction.status === "working" ? "Working…" : paper.has_pdf ? "Replace PDF" : "Upload PDF"}
             </UploadButton>
@@ -190,7 +195,31 @@ export default function PaperDetailView({ id, uploaded }) {
         {pdfAction.status === "error" && <p className="error">{pdfAction.error}</p>}
       </div>
 
-      {chunks.length > 0 && <FullText paper={paper} chunks={chunks} />}
+      <div className="panel">
+        <div className="subtabs" role="tablist">
+          {[
+            ["summary", "Summary"],
+            ["text", "Extracted text"],
+          ].map(([name, label]) => (
+            <button
+              key={name}
+              role="tab"
+              aria-selected={tab === name}
+              className={tab === name ? "subtab active" : "subtab"}
+              onClick={() => setTab(name)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {tab === "summary" ? (
+          <SummaryPanel paper={paper} version={tick} />
+        ) : chunks.length > 0 ? (
+          <FullText paper={paper} chunks={chunks} />
+        ) : (
+          <p className="muted">No text has been extracted yet. Upload the PDF to see it here.</p>
+        )}
+      </div>
     </section>
   );
 }
@@ -203,7 +232,7 @@ function BackLink() {
   );
 }
 
-// The cleaned text, grouped by section, as the AI features will see it.
+// The cleaned text, grouped by section: what the AI features draw on.
 function FullText({ paper, chunks }) {
   const sections = [];
   for (const chunk of chunks) {
@@ -217,8 +246,7 @@ function FullText({ paper, chunks }) {
   const tokens = chunks.reduce((sum, c) => sum + c.n_tokens, 0);
 
   return (
-    <div className="panel">
-      <h3>Extracted text</h3>
+    <div>
       <p className="muted">
         {paper.page_count} pages → {sections.length} sections, {chunks.length} chunks, about{" "}
         {tokens.toLocaleString()} tokens. Front matter and references are left out.

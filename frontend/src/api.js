@@ -44,15 +44,24 @@ export const api = {
       body: JSON.stringify(changes),
     }),
   listChunks: (id) => request(`/papers/${id}/chunks`),
-  uploadPdf: (file) => request("/papers/upload", { method: "POST", body: pdfForm(file) }),
-  attachPdf: (id, file) => request(`/papers/${id}/pdf`, { method: "POST", body: pdfForm(file) }),
+  uploadPdf: (file, provider) =>
+    request("/papers/upload", { method: "POST", body: pdfForm(file, { provider }) }),
+  attachPdf: (id, file, provider) =>
+    request(`/papers/${id}/pdf`, { method: "POST", body: pdfForm(file, { provider }) }),
   fetchPdf: (id) => request(`/papers/${id}/pdf/fetch`, { method: "POST" }),
   pdfUrl: (id) => `/api/papers/${id}/pdf`,
+  llmSettings: () => request("/settings/llm"),
+  getSummary: (id) => request(`/papers/${id}/summary`),
+  createSummary: (id, { provider, refresh = false } = {}) =>
+    request(`/papers/${id}/summary${query({ provider, refresh: refresh || null })}`, { method: "POST" }),
 };
 
-function pdfForm(file) {
+function pdfForm(file, fields = {}) {
   const form = new FormData();
   form.append("file", file);
+  for (const [name, value] of Object.entries(fields)) {
+    if (value != null) form.append(name, value);
+  }
   return form;
 }
 
