@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterator
 
 from sqlalchemy import create_engine
@@ -11,7 +12,12 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url: str):
-    return create_engine(url, connect_args={"check_same_thread": False})
+    return create_engine(
+        url,
+        connect_args={"check_same_thread": False},
+        # Store JSON (e.g. author lists) unescaped so text filters match "José".
+        json_serializer=lambda obj: json.dumps(obj, ensure_ascii=False),
+    )
 
 
 engine = make_engine(settings.db_url)
