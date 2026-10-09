@@ -38,6 +38,11 @@ export default function PaperCard({ paper, actions, href }) {
         {paper.year && <> · {paper.year}</>}
         <span className="tag">{SOURCE_LABELS[paper.source] || paper.source}</span>
         <PdfStatus paper={paper} />
+        {paper.metadata_source?.endsWith("_title") && (
+          <span className="tag status-warning" title="Matched by a title search; open the paper to verify">
+            ⚠ Verify metadata
+          </span>
+        )}
         {paper.pdf_url && (
           <a className="tag tag-link" href={paper.pdf_url} target="_blank" rel="noreferrer">
             PDF

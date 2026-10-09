@@ -1,15 +1,19 @@
 """Bibliographic metadata for uploaded PDFs.
 
-Two passes, cheapest first:
+Passes, cheapest first:
 1. Heuristics over the PDF's own metadata and its first page (title from the
    largest font, authors from the lines under it, abstract from its section).
-2. A Semantic Scholar lookup by DOI, arXiv id or title, which replaces the
-   guesses when it finds a confident match.
+2. A lookup that replaces the guesses: Semantic Scholar by DOI, arXiv id or
+   title, then arXiv itself by id or title (S2 often rate-limits keyless use).
+
+An identifier lookup is exact. A title search only finds the most similar
+title, so its `source` ends in "_title" and the UI asks the user to verify it.
 
 An LLM pass over the first page joins these in M3. All fields stay editable.
 """
 
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from difflib import SequenceMatcher
@@ -17,7 +21,9 @@ from difflib import SequenceMatcher
 import httpx
 
 from app.services.library import normalize_title
+from app.schemas import PaperCreate
 from app.services.pdf import ExtractedPdf, Line
+from app.services.search import arxiv_terms, query_arxiv
 
 S2_PAPER_URL = "https://api.semanticscholar.org/graph/v1/paper/"
 S2_FIELDS = "paperId,title,authors,year,abstract,url,externalIds"
@@ -48,8 +54,16 @@ class ExtractedMetadata:
     doi: str | None = None
     url: str | None = None
     arxiv_id: str | None = None
-    external_id: str | None = None  # Semantic Scholar paperId after a match
-    source: str = "pdf"  # pdf | semantic_scholar
+    external_id: str | None = None  # S2 paperId or arXiv id after a match
+    # pdf | semantic_scholar | semantic_scholar_title | arxiv | arxiv_title
+    source: str = "pdf"
+
+    @property
+    def external_source(self) -> str:
+        """The library `source` that `external_id` belongs to, for duplicate checks."""
+        if self.source.startswith("semantic_scholar"):
+            return "s2"
+        return "arxiv" if self.source.startswith("arxiv") else "upload"
 
     def as_paper_fields(self) -> dict:
         data = asdict(self)
@@ -160,6 +174,12 @@ def _year(arxiv_id: str | None, page_text: str, pdf_metadata: dict) -> int | Non
     return int(created.group(1)) if created else None
 
 
+def lookup(client: httpx.Client, meta: ExtractedMetadata, s2_api_key: str | None = None) -> ExtractedMetadata:
+    """Improve `meta` from Semantic Scholar, else arXiv; unchanged if neither matches."""
+    found = lookup_semantic_scholar(client, meta, s2_api_key)
+    return found if found is not meta else lookup_arxiv(client, meta)
+
+
 def lookup_semantic_scholar(
     client: httpx.Client, meta: ExtractedMetadata, api_key: str | None = None
 ) -> ExtractedMetadata:
@@ -172,7 +192,7 @@ def lookup_semantic_scholar(
             if key:
                 resp = client.get(S2_PAPER_URL + key, params=params, headers=headers)
                 if resp.status_code == 200:
-                    return _merge(meta, resp.json())
+                    return _merge(meta, resp.json(), "semantic_scholar")
                 if resp.status_code != 404:
                     resp.raise_for_status()
         if meta.title:
@@ -184,18 +204,55 @@ def lookup_semantic_scholar(
             if resp.status_code == 200:
                 match = (resp.json().get("data") or [None])[0]
                 if match and _similar_titles(meta.title, match.get("title") or ""):
-                    return _merge(meta, match)
+                    return _merge(meta, match, "semantic_scholar_title")
     except (httpx.HTTPError, ValueError):
         pass  # rate-limited or offline: the heuristic metadata stands
     return meta
 
 
+def lookup_arxiv(client: httpx.Client, meta: ExtractedMetadata) -> ExtractedMetadata:
+    """Return `meta` improved by its arXiv record (by id, else by title), or unchanged."""
+    try:
+        if meta.arxiv_id:
+            for paper in query_arxiv(client, {"id_list": meta.arxiv_id, "max_results": 1}):
+                return _merge_arxiv(meta, paper, "arxiv")
+        if meta.title:
+            words = normalize_title(meta.title).split()
+            # The exact phrase ranks the paper first; plain terms are the fallback.
+            for query in (f'ti:"{" ".join(words)}"',
+                          " AND ".join(f"ti:{w}" for w in arxiv_terms(" ".join(words)))):
+                candidates = query_arxiv(client, {"search_query": query, "max_results": 10})
+                best = max(candidates, key=lambda p: _title_ratio(meta.title, p.title), default=None)
+                if best and _similar_titles(meta.title, best.title):
+                    return _merge_arxiv(meta, best, "arxiv_title")
+    except (httpx.HTTPError, ET.ParseError):
+        pass
+    return meta
+
+
+def _title_ratio(a: str, b: str) -> float:
+    return SequenceMatcher(None, normalize_title(a), normalize_title(b)).ratio()
+
+
 def _similar_titles(a: str, b: str) -> bool:
-    ratio = SequenceMatcher(None, normalize_title(a), normalize_title(b)).ratio()
-    return ratio >= TITLE_MATCH_THRESHOLD
+    return _title_ratio(a, b) >= TITLE_MATCH_THRESHOLD
 
 
-def _merge(meta: ExtractedMetadata, item: dict) -> ExtractedMetadata:
+def _merge_arxiv(meta: ExtractedMetadata, paper: PaperCreate, source: str) -> ExtractedMetadata:
+    return ExtractedMetadata(
+        title=paper.title,
+        authors=paper.authors or meta.authors,
+        year=paper.year or meta.year,
+        abstract=paper.abstract or meta.abstract,
+        doi=paper.doi or meta.doi,
+        url=paper.url or meta.url,
+        arxiv_id=paper.external_id,
+        external_id=paper.external_id,
+        source=source,
+    )
+
+
+def _merge(meta: ExtractedMetadata, item: dict, source: str) -> ExtractedMetadata:
     ids = item.get("externalIds") or {}
     authors = [a["name"] for a in item.get("authors") or [] if a.get("name")]
     return ExtractedMetadata(
@@ -207,5 +264,5 @@ def _merge(meta: ExtractedMetadata, item: dict) -> ExtractedMetadata:
         url=item.get("url") or meta.url,
         arxiv_id=ids.get("ArXiv") or meta.arxiv_id,
         external_id=item.get("paperId"),
-        source="semantic_scholar",
+        source=source,
     )

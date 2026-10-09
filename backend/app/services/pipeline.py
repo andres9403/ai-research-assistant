@@ -18,7 +18,7 @@ from app.db import SessionLocal
 from app.models import Chunk, Paper
 from app.services import http
 from app.services.library import DuplicateIndex, normalize_doi
-from app.services.metadata import ExtractedMetadata, extract_metadata, lookup_semantic_scholar
+from app.services.metadata import ExtractedMetadata, extract_metadata, lookup
 from app.services.pdf import MAX_PDF_BYTES, ExtractedPdf, PdfError, extract
 
 log = logging.getLogger(__name__)
@@ -102,15 +102,15 @@ def upload(
     paper instead of creating a duplicate.
     """
     extracted = extract(data)
-    meta = lookup_semantic_scholar(client, extract_metadata(extracted), settings.semantic_scholar_api_key)
+    meta = lookup(client, extract_metadata(extracted), settings.semantic_scholar_api_key)
 
     fields = meta.as_paper_fields()
     fields["title"] = fields["title"] or _title_from_filename(filename)
     fields["doi"] = normalize_doi(fields["doi"])
     paper = Paper(source="upload", **fields)
 
-    # A Semantic Scholar match carries an S2 paperId, which identifies saved s2 papers.
-    probe = Paper(**{**fields, "source": "s2" if meta.external_id else "upload"})
+    # A match carries an S2 paperId or arXiv id, which identifies saved search results.
+    probe = Paper(**{**fields, "source": meta.external_source})
     if (existing_id := DuplicateIndex(session).match(probe)) is not None:
         existing = session.get(Paper, existing_id)
         if existing.status in HAS_PDF:

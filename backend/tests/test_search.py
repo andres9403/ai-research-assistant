@@ -139,6 +139,14 @@ def test_falls_back_to_arxiv(s2):
     assert calls[-1].url.params["max_results"] == "3"
 
 
+def test_arxiv_query_drops_stopwords_it_cannot_match():
+    calls = []
+    make_service(arxiv=arxiv_ok, calls=calls).search_arxiv("Attention is all you need", 5)
+    assert calls[-1].url.params["search_query"] == "all:Attention AND all:need"
+    make_service(arxiv=arxiv_ok, calls=calls).search_arxiv("the of", 5)
+    assert calls[-1].url.params["search_query"] == "all:the AND all:of"  # nothing else to search
+
+
 def test_arxiv_error_entries_are_skipped():
     error_feed = b"""<feed xmlns="http://www.w3.org/2005/Atom">
       <entry><id>http://arxiv.org/api/errors#incorrect_id</id><title>Error</title></entry>

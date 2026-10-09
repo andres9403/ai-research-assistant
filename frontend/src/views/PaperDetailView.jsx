@@ -6,9 +6,13 @@ import UploadButton from "../components/UploadButton.jsx";
 
 const METADATA_NOTES = {
   pdf: "Metadata was extracted from the PDF. Check it and edit anything that's wrong.",
-  semantic_scholar: "Metadata was matched on Semantic Scholar.",
+  semantic_scholar: "Metadata was matched on Semantic Scholar by the paper's identifier.",
+  arxiv: "Metadata was matched on arXiv by the paper's identifier.",
   edited: "Metadata edited by you.",
 };
+
+// Title-search matches are likely right but not certain, so they get a warning.
+const TITLE_MATCH_SITES = { semantic_scholar_title: "Semantic Scholar", arxiv_title: "arXiv" };
 
 export default function PaperDetailView({ id, uploaded }) {
   const [paper, setPaper] = useState(null);
@@ -78,7 +82,7 @@ export default function PaperDetailView({ id, uploaded }) {
       <BackLink />
       {uploaded && (
         <p className="banner">
-          PDF uploaded and processed locally. Below is the metadata extracted from it.
+          PDF uploaded and processed locally. Check the metadata below.
         </p>
       )}
 
@@ -131,6 +135,14 @@ export default function PaperDetailView({ id, uploaded }) {
               </>
             )}
           </dl>
+          {TITLE_MATCH_SITES[paper.metadata_source] && (
+            <p className="warning">
+              ⚠ This metadata was filled in from a {TITLE_MATCH_SITES[paper.metadata_source]} search
+              for the paper's title, not from an exact identifier, so it may belong to a different
+              paper with a similar title. Open the link above to check, and use Edit metadata to fix
+              anything that's wrong.
+            </p>
+          )}
           <h4>Abstract</h4>
           <p className="card-abstract">{paper.abstract || <span className="muted">No abstract.</span>}</p>
           {METADATA_NOTES[paper.metadata_source] && (

@@ -144,6 +144,16 @@ a.button.secondary { background: var(--surface); color: var(--text); border-colo
 .status-ready { color: var(--ok); border-color: currentColor; }
 .status-downloading, .status-processing { color: var(--warn); border-color: currentColor; }
 .status-failed { color: var(--err); border-color: currentColor; }
+.status-warning { color: var(--warn); border-color: currentColor; }
+.warning {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fff6e5;
+  border: 1px solid #f0d29a;
+  color: #7a4a00;
+  font-size: 0.9rem;
+}
 
 .detail { display: flex; flex-direction: column; gap: 14px; }
 .back { text-decoration: none; font-size: 0.9rem; }

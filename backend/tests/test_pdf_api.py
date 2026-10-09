@@ -36,9 +36,17 @@ def test_upload_extracts_metadata_and_chunks(client, network):
     assert paper["metadata_source"] == "pdf"
     assert "pdf_path" not in paper
 
-    # Semantic Scholar was asked (and answered 404), first by arXiv id, then by title.
-    paths = [r.url.path for r in network.requests]
-    assert paths == ["/graph/v1/paper/arXiv:2401.01234", "/graph/v1/paper/search/match"]
+    # Semantic Scholar was asked first by arXiv id, then by title; then arXiv by id,
+    # then by title phrase and title words. Nothing matched, so the PDF's metadata stands.
+    asked = [(r.url.host, r.url.path, r.url.params.get("id_list") or r.url.params.get("search_query"))
+             for r in network.requests]
+    assert asked == [
+        ("api.semanticscholar.org", "/graph/v1/paper/arXiv:2401.01234", None),
+        ("api.semanticscholar.org", "/graph/v1/paper/search/match", None),
+        ("export.arxiv.org", "/api/query", "2401.01234"),
+        ("export.arxiv.org", "/api/query", 'ti:"sparse expert routing for efficient language models"'),
+        ("export.arxiv.org", "/api/query", "ti:sparse AND ti:expert AND ti:routing AND ti:efficient AND ti:language AND ti:models"),
+    ]
 
     chunks = client.get(f"/api/papers/{paper['id']}/chunks").json()
     assert [c["ordinal"] for c in chunks] == list(range(len(chunks)))
@@ -71,6 +79,49 @@ def test_upload_uses_a_semantic_scholar_match(client, network):
     assert paper["doi"] == "10.1000/sparse"
     assert paper["abstract"] == "Published abstract."
     assert paper["external_id"] == "s2abc"
+
+
+def arxiv_feed(arxiv_id, title, year=2024):
+    return f"""<feed xmlns="http://www.w3.org/2005/Atom"><entry>
+      <id>http://arxiv.org/abs/{arxiv_id}v1</id><title>{title}</title>
+      <link href="https://arxiv.org/abs/{arxiv_id}v1" rel="alternate" type="text/html"/>
+      <summary>The arXiv abstract.</summary><published>{year}-01-03T00:00:00Z</published>
+      <author><name>Ana María López</name></author><author><name>Wei Zhang</name></author>
+    </entry></feed>""".encode()
+
+
+def test_upload_falls_back_to_arxiv_by_id(client, network):
+    network.on("api.semanticscholar.org", lambda r: httpx.Response(429))
+    network.on("export.arxiv.org", lambda r: httpx.Response(200, content=arxiv_feed("2401.01234", TITLE)))
+    paper = upload(client).json()
+    assert paper["metadata_source"] == "arxiv"
+    assert paper["abstract"] == "The arXiv abstract."
+    assert paper["external_id"] == "2401.01234"
+
+
+def test_upload_matched_by_arxiv_title_search_is_flagged(client, network):
+    def arxiv(request):
+        if "id_list" in request.url.params:
+            return httpx.Response(200, content=b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+        return httpx.Response(200, content=arxiv_feed("2401.09999", TITLE.upper()))
+
+    network.on("export.arxiv.org", arxiv)
+    paper = upload(client, make_paper_pdf(arxiv_stamp=None)).json()
+    assert paper["metadata_source"] == "arxiv_title"  # the UI shows a verify warning for this
+    assert paper["url"] == "https://arxiv.org/abs/2401.09999v1"
+    assert paper["year"] == 2024
+
+
+def test_upload_matched_on_arxiv_attaches_to_the_saved_arxiv_paper(client, network):
+    network.on("export.arxiv.org", lambda r: httpx.Response(200, content=arxiv_feed("2401.01234", TITLE)))
+    saved = client.post(
+        "/api/papers",
+        json=paper_payload(source="arxiv", external_id="2401.01234", doi=None, title="Preprint title",
+                           pdf_url=None),
+    ).json()
+    resp = upload(client)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == saved["id"]
 
 
 def test_upload_matching_a_saved_paper_attaches_to_it(client):
