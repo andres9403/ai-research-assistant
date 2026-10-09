@@ -1,7 +1,7 @@
 import json
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
@@ -30,6 +30,23 @@ def init_db() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.pdf_dir.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(engine)
+    add_missing_columns()
+
+
+def add_missing_columns() -> None:
+    """Add columns that later milestones introduced to tables an older version created.
+
+    New columns are always nullable, so a plain ADD COLUMN is enough; there is no
+    migration tool in this project.
+    """
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            existing = {col["name"] for col in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name not in existing:
+                    ddl = column.type.compile(engine.dialect)
+                    conn.exec_driver_sql(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl}')
 
 
 def get_session() -> Iterator[Session]:

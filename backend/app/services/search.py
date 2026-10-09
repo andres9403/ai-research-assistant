@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.config import settings
+from app.services import http
 from app.schemas import PaperCreate
 
 S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -107,7 +108,8 @@ def _parse_s2(item: dict) -> PaperCreate | None:
         year=item.get("year"),
         abstract=_clean(item.get("abstract")),
         url=item.get("url"),
-        pdf_url=pdf.get("url") or None,
+        # S2 often has no open-access link for arXiv papers it knows the id of.
+        pdf_url=pdf.get("url") or (f"https://arxiv.org/pdf/{ids['ArXiv']}" if ids.get("ArXiv") else None),
     )
 
 
@@ -144,9 +146,5 @@ def _parse_arxiv(entry: ET.Element) -> PaperCreate | None:
 
 
 def get_search_service() -> Iterator[SearchService]:
-    with httpx.Client(
-        timeout=10.0,
-        follow_redirects=True,
-        headers={"User-Agent": "ai-research-assistant/0.1"},
-    ) as client:
+    with http.make_client() as client:
         yield SearchService(client, settings.semantic_scholar_api_key)

@@ -1,12 +1,23 @@
 import { useEffect, useState } from "react";
-import { api } from "../api.js";
+import { api, BUSY_STATUSES } from "../api.js";
 import PaperCard from "../components/PaperCard.jsx";
+import UploadButton from "../components/UploadButton.jsx";
 
 const EMPTY_FILTERS = { q: "", source: "", year_from: "", year_to: "" };
 
 export default function LibraryView() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [state, setState] = useState({ status: "loading", papers: [] });
+  const [upload, setUpload] = useState({ status: "idle" });
+  const [tick, setTick] = useState(0); // bumping it reloads the list
+
+  // While any PDF is downloading or processing, reload every 2 s to show progress.
+  const busy = state.papers.some((p) => BUSY_STATUSES.includes(p.status));
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setTimeout(() => setTick((t) => t + 1), 2000);
+    return () => clearTimeout(timer);
+  }, [busy, state.papers]);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,10 +32,20 @@ export default function LibraryView() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [filters]);
+  }, [filters, tick]);
 
   function update(field) {
     return (event) => setFilters((f) => ({ ...f, [field]: event.target.value }));
+  }
+
+  async function uploadPdf(file) {
+    setUpload({ status: "uploading", name: file.name });
+    try {
+      const paper = await api.uploadPdf(file);
+      window.location.hash = `#/paper/${paper.id}?uploaded`;
+    } catch (err) {
+      setUpload({ status: "error", error: err.message, paperId: err.detail?.paper_id });
+    }
   }
 
   async function remove(paper) {
@@ -42,6 +63,25 @@ export default function LibraryView() {
 
   return (
     <section>
+      <div className="toolbar">
+        <UploadButton onFile={uploadPdf} busy={upload.status === "uploading"}>
+          {upload.status === "uploading" ? `Extracting ${upload.name}…` : "Upload PDF"}
+        </UploadButton>
+        <span className="muted">
+          Text and metadata are extracted locally; the PDF never leaves your machine.
+        </span>
+      </div>
+      {upload.status === "error" && (
+        <p className="error">
+          Upload failed: {upload.error}
+          {upload.paperId && (
+            <>
+              {" "}
+              <a href={`#/paper/${upload.paperId}`}>Open the existing paper</a>
+            </>
+          )}
+        </p>
+      )}
       <div className="filters">
         <input
           type="search"
@@ -86,7 +126,8 @@ export default function LibraryView() {
       )}
       {state.status === "done" && !papers.length && !filtered && (
         <p className="empty">
-          Your library is empty. <a href="#/search">Search for papers</a> and save them here.
+          Your library is empty. <a href="#/search">Search for papers</a> to save them here, or
+          upload a PDF.
         </p>
       )}
       <div className="list">
@@ -94,6 +135,7 @@ export default function LibraryView() {
           <PaperCard
             key={paper.id}
             paper={paper}
+            href={`#/paper/${paper.id}`}
             actions={
               <button className="danger" onClick={() => remove(paper)}>
                 Delete

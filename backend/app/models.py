@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
@@ -24,5 +24,34 @@ class Paper(Base):
     url: Mapped[str | None] = mapped_column(Text)
     pdf_url: Mapped[str | None] = mapped_column(Text)
     pdf_path: Mapped[str | None] = mapped_column(Text)
+    # no_pdf | downloading | processing | ready | failed
     status: Mapped[str] = mapped_column(String(16), default="no_pdf")
+    status_detail: Mapped[str | None] = mapped_column(Text)  # why a PDF is missing or failed
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    metadata_source: Mapped[str | None] = mapped_column(String(32))  # pdf | semantic_scholar
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    chunks: Mapped[list["Chunk"]] = relationship(
+        back_populates="paper", cascade="all, delete-orphan", order_by="Chunk.ordinal"
+    )
+
+    @property
+    def has_pdf(self) -> bool:
+        return self.pdf_path is not None
+
+
+class Chunk(Base):
+    """A paragraph-aligned slice of a paper's cleaned text, the unit of retrieval."""
+
+    __tablename__ = "chunks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    paper_id: Mapped[int] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    section: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    page_start: Mapped[int] = mapped_column(Integer)
+    page_end: Mapped[int] = mapped_column(Integer)
+    n_tokens: Mapped[int] = mapped_column(Integer)
+
+    paper: Mapped[Paper] = relationship(back_populates="chunks")
