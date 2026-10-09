@@ -22,6 +22,14 @@ def read_pdf_upload(file: UploadFile) -> bytes:
     return data
 
 
+def metadata_llm(provider: str | None) -> llm.LLMProvider | None:
+    """The LLM for the first-page metadata pass, or None to rely on heuristics alone."""
+    try:
+        return llm.resolve(provider)
+    except llm.LLMNotConfigured:
+        return None
+
+
 @router.post("/upload", response_model=PaperOut, status_code=201)
 def upload_pdf(
     response: Response,
@@ -39,11 +47,7 @@ def upload_pdf(
     """
     data = read_pdf_upload(file)
     try:
-        model = llm.resolve(provider)
-    except llm.LLMNotConfigured:
-        model = None
-    try:
-        paper, created = pipeline.upload(session, data, file.filename, client, model)
+        paper, created = pipeline.upload(session, data, file.filename, client, metadata_llm(provider))
     except PdfError as exc:
         raise HTTPException(422, str(exc)) from exc
     except pipeline.DuplicatePdf as exc:
@@ -58,15 +62,20 @@ def upload_pdf(
 @router.post("/{paper_id}/pdf", response_model=PaperOut)
 def attach_pdf(
     file: UploadFile = File(...),
+    provider: str | None = Form(None),
     paper: Paper = Depends(get_paper_or_404),
     session: Session = Depends(get_session),
 ) -> Paper:
-    """Attach (or replace) the PDF of a saved paper, e.g. one with no open-access copy."""
+    """Attach (or replace) the PDF of a saved paper, e.g. one with no open-access copy.
+
+    `provider` picks the LLM that reads page one to fill the paper's blank
+    fields, as on upload.
+    """
     if paper.status in pipeline.BUSY:
         raise HTTPException(409, "The PDF is already being processed")
     data = read_pdf_upload(file)
     try:
-        pipeline.attach(session, paper, data)
+        pipeline.attach(session, paper, data, metadata_llm(provider))
     except PdfError as exc:
         raise HTTPException(422, str(exc)) from exc
     return paper

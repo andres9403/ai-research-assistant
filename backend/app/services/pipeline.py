@@ -108,12 +108,7 @@ def upload(
     correct the heuristic metadata; if that call fails the heuristics stand.
     """
     extracted = extract(data)
-    meta = extract_metadata(extracted)
-    if llm is not None:
-        try:
-            meta = llm_metadata(llm, extracted, meta)
-        except LLMError as exc:
-            log.warning("LLM metadata pass failed, keeping heuristic metadata: %s", exc)
+    meta = _read_metadata(extracted, llm)
     meta = lookup(client, meta, settings.semantic_scholar_api_key)
 
     fields = meta.as_paper_fields()
@@ -142,11 +137,28 @@ def upload(
     return paper, True
 
 
-def attach(session: Session, paper: Paper, data: bytes) -> None:
-    """Attach an uploaded PDF to an existing paper, replacing any earlier one."""
+def attach(session: Session, paper: Paper, data: bytes, llm: LLMProvider | None = None) -> None:
+    """Attach an uploaded PDF to an existing paper, replacing any earlier one.
+
+    The PDF's metadata only fills the paper's blank fields. `llm` reads page
+    one first, as on upload, unless none of the fields it can fill are blank.
+    """
     extracted = extract(data)
-    fill_missing(paper, extract_metadata(extracted))
+    if paper.authors and paper.year and paper.abstract:
+        llm = None
+    fill_missing(paper, _read_metadata(extracted, llm))
     ingest(session, paper, data, extracted)
+
+
+def _read_metadata(extracted: ExtractedPdf, llm: LLMProvider | None) -> ExtractedMetadata:
+    """The PDF's heuristic metadata, corrected by `llm` if given and the call succeeds."""
+    meta = extract_metadata(extracted)
+    if llm is not None:
+        try:
+            meta = llm_metadata(llm, extracted, meta)
+        except LLMError as exc:
+            log.warning("LLM metadata pass failed, keeping heuristic metadata: %s", exc)
+    return meta
 
 
 def _title_from_filename(filename: str | None) -> str:

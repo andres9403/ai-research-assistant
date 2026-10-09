@@ -46,7 +46,8 @@ export const api = {
   listChunks: (id) => request(`/papers/${id}/chunks`),
   uploadPdf: (file, provider) =>
     request("/papers/upload", { method: "POST", body: pdfForm(file, { provider }) }),
-  attachPdf: (id, file) => request(`/papers/${id}/pdf`, { method: "POST", body: pdfForm(file) }),
+  attachPdf: (id, file, provider) =>
+    request(`/papers/${id}/pdf`, { method: "POST", body: pdfForm(file, { provider }) }),
   fetchPdf: (id) => request(`/papers/${id}/pdf/fetch`, { method: "POST" }),
   pdfUrl: (id) => `/api/papers/${id}/pdf`,
   llmSettings: () => request("/settings/llm"),

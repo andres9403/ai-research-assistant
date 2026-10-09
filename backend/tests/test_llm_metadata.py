@@ -5,7 +5,8 @@ from app.services.metadata import ExtractedMetadata, extract_metadata, llm_metad
 from app.services.pdf import extract
 from tests.conftest import FakeLLM
 from tests.pdf_factory import ABSTRACT, AUTHORS, TITLE, make_paper_pdf
-from tests.test_pdf_api import upload
+from tests.test_papers import paper as paper_payload
+from tests.test_pdf_api import PDF, upload
 
 FIXED_AUTHORS = ["Ana M. López", "Wei Zhang", "John O'Neil", "Priya Raman"]
 
@@ -55,6 +56,56 @@ def test_upload_without_an_llm_skips_the_pass(client):
     resp = upload(client)
     assert resp.status_code == 201
     assert resp.json()["metadata_source"] == "pdf"
+
+
+def attach(client, paper_id, provider=None):
+    return client.post(
+        f"/api/papers/{paper_id}/pdf",
+        files={"file": ("x.pdf", PDF, "application/pdf")},
+        data={"provider": provider} if provider else None,
+    )
+
+
+def test_attach_fills_blanks_from_the_llm_reading(client, fake_llm):
+    fake_llm.answers["paper_metadata"] = {"title": TITLE, "authors": FIXED_AUTHORS, "year": 2023}
+    saved = client.post("/api/papers", json=paper_payload(authors=[], abstract=None)).json()
+
+    resp = attach(client, saved["id"], provider="anthropic")
+
+    assert resp.status_code == 200
+    [call] = fake_llm.calls
+    assert call["schema_name"] == "paper_metadata"
+    assert call["prompt"].startswith("<page>\narXiv:2401.01234v2")
+    paper = resp.json()
+    assert paper["authors"] == FIXED_AUTHORS  # blank, so the LLM reading fills it
+    assert paper["title"] == saved["title"]  # saved metadata still wins
+    assert paper["year"] == 2017
+    assert paper["abstract"] == ABSTRACT
+
+
+def test_attach_skips_the_llm_when_nothing_is_missing(client, fake_llm):
+    saved = client.post("/api/papers", json=paper_payload()).json()
+    assert attach(client, saved["id"]).status_code == 200
+    assert fake_llm.calls == []
+
+
+def test_attach_falls_back_to_the_heuristics(client, fake_llm):
+    fake_llm.answers["paper_metadata"] = llm.LLMError("Anthropic is rate-limiting requests.")
+    failed = client.post("/api/papers", json=paper_payload(authors=[])).json()
+    resp = attach(client, failed["id"])
+    assert resp.status_code == 200
+    assert resp.json()["authors"] == AUTHORS
+    assert len(fake_llm.calls) == 1
+
+    # A provider without a key is skipped, as on upload.
+    keyless = client.post(
+        "/api/papers",
+        json=paper_payload(external_id="s2-2", doi="10.1000/def", title="Another Paper", authors=[]),
+    ).json()
+    resp = attach(client, keyless["id"], provider="openai")
+    assert resp.status_code == 200
+    assert resp.json()["authors"] == AUTHORS
+    assert len(fake_llm.calls) == 1
 
 
 def test_missing_abstract_is_requested_and_bad_values_are_ignored():

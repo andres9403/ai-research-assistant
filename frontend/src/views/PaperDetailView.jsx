@@ -4,6 +4,7 @@ import { SOURCE_LABELS, formatAuthors } from "../components/PaperCard.jsx";
 import PdfStatus from "../components/PdfStatus.jsx";
 import SummaryPanel from "../components/SummaryPanel.jsx";
 import UploadButton from "../components/UploadButton.jsx";
+import { useLlm } from "../llm.jsx";
 
 const METADATA_NOTES = {
   pdf: "Metadata was extracted from the PDF. Check it and edit anything that's wrong.",
@@ -24,6 +25,7 @@ export default function PaperDetailView({ id, uploaded }) {
   const [pdfAction, setPdfAction] = useState({ status: "idle" });
   const [tick, setTick] = useState(0); // bumping it reloads the paper
   const [tab, setTab] = useState("summary");
+  const llm = useLlm();
 
   useEffect(() => {
     let cancelled = false;
@@ -184,7 +186,7 @@ export default function PaperDetailView({ id, uploaded }) {
             <UploadButton
               className={paper.has_pdf ? "secondary" : undefined}
               busy={pdfAction.status === "working"}
-              onFile={(file) => runPdfAction(() => api.attachPdf(paper.id, file))}
+              onFile={(file) => runPdfAction(() => api.attachPdf(paper.id, file, llm.provider))}
             >
               {pdfAction.status === "working" ? "Working…" : paper.has_pdf ? "Replace PDF" : "Upload PDF"}
             </UploadButton>
