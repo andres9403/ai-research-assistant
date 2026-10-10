@@ -163,7 +163,7 @@ def test_search_endpoint_forwards_filters(client, use_service):
 def test_search_endpoint_without_filters_is_keyword_only(client, use_service):
     calls = []
     use_service(make_service(s2=s2_ok, calls=calls))
-    body = client.get("/api/search", params={"q": "attention", "author": "", "venue": ""}).json()
+    body = client.get("/api/search", params={"q": "attention", "author": "   ", "venue": ""}).json()
     assert body["notes"] == [] and body["unapplied_filters"] == []
     assert set(calls[0].url.params) == {"query", "limit", "fields"}
 
