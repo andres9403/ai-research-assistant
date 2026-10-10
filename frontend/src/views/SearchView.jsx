@@ -77,7 +77,7 @@ export default function SearchView({ active }) {
 
   async function runSearch(searchFilters) {
     const q = query.trim();
-    if (!q || yearError(searchFilters)) return;
+    if (!q) return;
     setState({ status: "loading" });
     setSaves({});
     try {
