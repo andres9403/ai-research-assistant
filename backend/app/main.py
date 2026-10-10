@@ -7,7 +7,7 @@ from app.config import settings
 from app.db import SessionLocal, init_db
 from app.routers import ai, health, papers, search, upload
 from app.routers import settings as settings_router
-from app.services.pipeline import recover_interrupted
+from app.services.pipeline import recover_interrupted, refresh_token_estimates
 
 
 @asynccontextmanager
@@ -15,6 +15,7 @@ async def lifespan(app: FastAPI):
     init_db()
     with SessionLocal() as session:
         recover_interrupted(session)
+        refresh_token_estimates(session)
     yield
 
 

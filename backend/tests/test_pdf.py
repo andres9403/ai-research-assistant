@@ -123,3 +123,11 @@ def test_long_paragraphs_are_split_at_sentences():
     assert all(len(p.split()) <= 120 for p in pieces)
     assert " ".join(pieces) == text
     assert all(p.endswith(".") for p in pieces)
+
+
+def test_token_estimate_holds_for_claude():
+    """Budgets are in estimated tokens; Claude counts about one per 2.8 characters of
+    paper text, so an estimate of 4 characters per token let summaries run 40% over."""
+    text = "Retrieval-augmented generation (RAG) sets 44.5 EM on NQ [12]. " * 40
+    assert pdf.estimate_tokens(text) >= len(text) / 3
+    assert pdf.estimate_tokens("abcd") == 2  # rounds up

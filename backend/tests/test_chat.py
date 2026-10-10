@@ -7,6 +7,7 @@ from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.models import ChatMessage, Chunk, Paper
 from app.services import chat, embeddings, llm, retrieval
+from app.services.pdf import CHARS_PER_TOKEN
 from tests.conftest import TEST_DB_PATH
 from tests.pdf_factory import make_paper_pdf
 from tests.test_papers import paper as paper_payload
@@ -294,9 +295,9 @@ def test_history_is_capped():
     paper.messages = [ChatMessage(role="user" if i % 2 == 0 else "assistant", content=f"m{i}") for i in range(10)]
     assert [m.content for m in chat.history(paper)] == ["m4", "m5", "m6", "m7", "m8", "m9"]
 
-    paper.messages[-1].content = "x" * 4 * (chat.HISTORY_BUDGET_TOKENS - 2)
+    paper.messages[-1].content = "x" * CHARS_PER_TOKEN * (chat.HISTORY_BUDGET_TOKENS - 2)
     assert [m.content for m in chat.history(paper)] == ["m8", paper.messages[-1].content]
-    paper.messages[-1].content = "x" * 4 * chat.HISTORY_BUDGET_TOKENS
+    paper.messages[-1].content = "x" * CHARS_PER_TOKEN * chat.HISTORY_BUDGET_TOKENS
     # Only the long last answer fits, and an answer alone would lack its question.
     assert chat.history(paper) == []
 

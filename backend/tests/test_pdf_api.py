@@ -1,3 +1,4 @@
+import math
 import sqlite3
 
 import httpx
@@ -8,6 +9,7 @@ from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.models import Paper
+from app.services import pdf
 from tests.conftest import TEST_DB_PATH
 from tests.pdf_factory import ABSTRACT, AUTHORS, TITLE, make_paper_pdf, make_scanned_pdf
 from tests.test_papers import paper as paper_payload
@@ -316,6 +318,22 @@ def test_restart_recovers_interrupted_downloads(client):
         paper = restarted.get(f"/api/papers/{saved['id']}").json()
     assert paper["status"] == "no_pdf"
     assert "restart" in paper["status_detail"]
+
+
+def test_restart_re_estimates_chunk_tokens(client):
+    """Chunks stored under the old 4-characters-per-token estimate get the current one."""
+    paper_id = upload(client).json()["id"]
+    with SessionLocal() as session:
+        chunks = session.get(Paper, paper_id).chunks
+        expected = {c.id: pdf.estimate_tokens(c.text) for c in chunks}
+        for chunk in chunks:
+            chunk.n_tokens = math.ceil(len(chunk.text) / 4)
+        session.commit()
+    client.__exit__(None, None, None)
+
+    with TestClient(app) as restarted:
+        stored = {c["id"]: c["n_tokens"] for c in restarted.get(f"/api/papers/{paper_id}/chunks").json()}
+    assert stored == expected
 
 
 def test_m1_database_gets_new_columns(client):
