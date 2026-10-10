@@ -314,7 +314,7 @@ def test_the_five_example_questions_are_answered_with_citations(client, fake_llm
 def test_provider_is_chosen_per_question(client, fake_llm, monkeypatch):
     other = type(fake_llm)(name="openai", model="fake-gpt")
     other.answers["paper_answer"] = {"answer": "From the other model [1]."}
-    monkeypatch.setattr(llm, "available", lambda: {"anthropic": fake_llm, "openai": other})
+    monkeypatch.setattr(llm, "available", lambda ollama=None: {"anthropic": fake_llm, "openai": other})
     paper_id = upload(client).json()["id"]
     answer = ask(client, paper_id, "What is routed?", provider="openai").json()["answer"]
     assert (answer["provider"], answer["model"]) == ("openai", "fake-gpt")
@@ -325,7 +325,7 @@ def test_chat_needs_an_llm(client):
     paper_id = upload(client).json()["id"]
     resp = ask(client, paper_id, "What is routed?")
     assert resp.status_code == 503
-    assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+    assert "API key under API keys" in resp.json()["detail"]
 
 
 def test_chat_needs_the_full_text(client, fake_llm):

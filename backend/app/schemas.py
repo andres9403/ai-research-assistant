@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 class PaperBase(BaseModel):
@@ -79,11 +79,29 @@ class LLMProviderOut(BaseModel):
     model: str
 
 
+class OllamaOut(BaseModel):
+    """The local Ollama the app looks for, so the UI can say what to install or pull."""
+
+    model: str
+    running: bool
+
+
+class ApiKeyIn(BaseModel):
+    """A key typed into the app. SecretStr keeps it out of reprs and logs; its format
+    is checked in services/api_keys.py so that errors never echo it back."""
+
+    key: SecretStr
+
+
 class LLMSettingsOut(BaseModel):
-    """Only providers with an API key are listed; `default` is None when there are none."""
+    """Only providers that can answer are listed; `default` is None when there are none.
+
+    API keys never leave the backend: providers are described by name and model only.
+    """
 
     default: str | None
     providers: list[LLMProviderOut]
+    ollama: OllamaOut
 
 
 class SummaryContent(BaseModel):

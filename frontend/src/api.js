@@ -51,6 +51,14 @@ export const api = {
   fetchPdf: (id) => request(`/papers/${id}/pdf/fetch`, { method: "POST" }),
   pdfUrl: (id) => `/api/papers/${id}/pdf`,
   llmSettings: () => request("/settings/llm"),
+  // Both answer with the updated LLM settings; the key itself is never sent back.
+  setApiKey: (provider, key) =>
+    request(`/settings/llm/keys/${provider}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    }),
+  removeApiKey: (provider) => request(`/settings/llm/keys/${provider}`, { method: "DELETE" }),
   getSummary: (id) => request(`/papers/${id}/summary`),
   createSummary: (id, { provider, refresh = false } = {}) =>
     request(`/papers/${id}/summary${query({ provider, refresh: refresh || null })}`, { method: "POST" }),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.js";
-import { LlmProvider, ProviderSelect } from "./llm.jsx";
+import { ApiKeysMenu, LlmProvider, ProviderSelect } from "./llm.jsx";
 import LibraryView from "./views/LibraryView.jsx";
 import PaperDetailView from "./views/PaperDetailView.jsx";
 import SearchView from "./views/SearchView.jsx";
@@ -48,7 +48,10 @@ export default function App() {
               </a>
             ))}
           </nav>
-          <ProviderSelect />
+          <div className="header-ai">
+            <ProviderSelect />
+            <ApiKeysMenu />
+          </div>
           {backend.state === "checking" && <span className="badge badge-checking">checking backend…</span>}
           {backend.state === "down" && (
             <span
