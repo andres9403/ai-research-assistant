@@ -20,6 +20,7 @@ body { margin: 0; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 12px 24px;
   background: var(--surface);
@@ -35,7 +36,6 @@ body { margin: 0; }
   border-radius: 999px;
   border: 1px solid currentColor;
 }
-.badge-ok { color: var(--ok); }
 .badge-checking { color: var(--warn); }
 .badge-down { color: var(--err); }
 
@@ -120,7 +120,8 @@ input, select {
   color: var(--muted);
 }
 .tag-link { text-decoration: none; color: var(--accent); }
-.saved { color: var(--ok); font-size: 0.9rem; white-space: nowrap; }
+.saved { color: var(--ok); font-size: 0.9rem; white-space: nowrap; text-decoration: none; }
+a.saved:hover { text-decoration: underline; }
 
 .small { font-size: 0.82rem; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
