@@ -20,7 +20,7 @@ The demo uses two papers:
    To go back to your own library after recording, stop the backend and swap the folders again.
 3. Download the BERT PDF from <https://arxiv.org/pdf/1810.04805> and save it somewhere easy to find, such as the desktop, as `bert.pdf`.
 4. Open <http://localhost:5173> in a browser window of about 1200 × 800 pixels, and zoom in to 110–125% so text is readable in the video.
-5. Make sure the header shows the **AI model** dropdown. If it says **AI off: no LLM key**, the key is missing from `.env`, or the backend was not restarted after you added it.
+5. Make sure the header shows the **AI model** dropdown. If it says **AI off: no model set up**, click **API keys** in the header and paste an Anthropic or OpenAI key, or start Ollama and pull its model (then click **Check again** in the Summary tab).
 
 ## Scene 1 — Introduction (30 s)
 
@@ -82,7 +82,7 @@ The demo uses two papers:
 
 **Do (only if both API keys are set):** Switch the **AI model** dropdown in the header to the other provider. The button changes to **Regenerate with …**. Click it.
 
-**Say:** "The app supports both Anthropic and OpenAI. The dropdown lists only the providers that have a key, and you can switch at any time."
+**Say:** "The app supports Anthropic, OpenAI and a free local model through Ollama. A key can be pasted right here under API keys; the app checks it and saves it, with no restart. The dropdown lists only the models that are ready to use, and you can switch at any time."
 
 ## Scene 8 — Ask questions (2 min)
 

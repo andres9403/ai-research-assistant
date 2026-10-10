@@ -118,7 +118,7 @@ def test_provider_is_chosen_per_request(client, fake_llm, monkeypatch):
     fake_llm.answers["paper_summary"] = SUMMARY
     other = type(fake_llm)(name="openai", model="fake-gpt")
     other.answers["paper_summary"] = {**SUMMARY, "tldr": "From the other model."}
-    monkeypatch.setattr(llm, "available", lambda: {"anthropic": fake_llm, "openai": other})
+    monkeypatch.setattr(llm, "available", lambda ollama=None: {"anthropic": fake_llm, "openai": other})
     paper_id = upload(client).json()["id"]
 
     data = client.post(f"/api/papers/{paper_id}/summary", params={"provider": "openai"}).json()
@@ -130,7 +130,7 @@ def test_summary_needs_an_llm(client):
     paper_id = upload(client).json()["id"]
     resp = client.post(f"/api/papers/{paper_id}/summary")
     assert resp.status_code == 503
-    assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+    assert "API key under API keys" in resp.json()["detail"]
 
 
 def test_unconfigured_provider_is_refused(client, fake_llm):

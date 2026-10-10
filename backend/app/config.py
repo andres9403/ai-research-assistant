@@ -3,10 +3,11 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = REPO_ROOT / ".env"  # also written by services/api_keys.py
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
 
     data_dir: Path = REPO_ROOT / "data"
     database_url: str | None = None
@@ -18,6 +19,11 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str | None = None
     llm_timeout: float = 90.0  # seconds per LLM request
+    # A local Ollama server needs no key; blank OLLAMA_URL turns detection off.
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str | None = None
+    ollama_timeout: float = 900.0  # seconds per request; a CPU-only summary took ~6 minutes in testing
+    ollama_num_ctx: int = 16384  # tokens; Ollama's default context would cut summary input short
     semantic_scholar_api_key: str | None = None
 
     @property

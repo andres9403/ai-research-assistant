@@ -2,7 +2,7 @@
 
 Search research papers, save them to a local library, upload your own PDFs, and ask an LLM to summarize a paper or answer questions about it. Summaries and answers are drawn from the paper's **full text**, not just its abstract, and every answer cites the passages it used.
 
-The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLite. Anthropic Claude and OpenAI are both supported, and you can switch between them in the app.
+The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLite. The AI runs on Anthropic Claude, OpenAI, or a free local model through [Ollama](https://ollama.com), which needs no account or API key. You can switch between them in the app.
 
 ![Paper detail page with a cited answer](docs/images/chat.png)
 
@@ -20,7 +20,7 @@ The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLi
 
 - **Python 3.11 or newer.** Tested on 3.11 and 3.13.
 - **Node.js 18 or newer.** Tested on 18 and 24.
-- **An Anthropic or OpenAI API key** for summaries and Q&A. Without one, search, the library and PDF upload still work, and the AI features are switched off.
+- **An AI model** for summaries and Q&A: an Anthropic or OpenAI API key, which you can paste into the app, or [Ollama](https://ollama.com) running on your machine (free, no key; see [Local model](#local-model-no-api-key)). Without one, search, the library and PDF upload still work, and the AI features are switched off.
 - Internet access for paper search, PDF downloads, the LLM, and a one-time download of the embedding model (about 65 MB).
 
 ## Quick start
@@ -34,13 +34,25 @@ git clone https://github.com/andres9403/ai-research-assistant.git
 cd ai-research-assistant
 ```
 
-**2. Add your API key.**
+**2. Choose an AI model.** Pick one of these. You can also add or change it later, while the app is running.
 
-```bash
-cp .env.example .env
-```
+- **An API key, pasted into the app (simplest).** Nothing to do yet. Once the app is open (step 5), click **API keys** in the header, choose Anthropic Claude or OpenAI, paste your key and click **Save key**. The app checks the key with the provider and saves it to `.env` for you, so it is kept after a restart. There is no file to edit and nothing to restart.
 
-Open `.env` and set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, or both. If you set only the OpenAI key, also set `LLM_PROVIDER=openai`. You can leave every other setting as it is.
+- **An API key in `.env`.** If you prefer to edit the file yourself:
+
+  ```bash
+  cp .env.example .env
+  ```
+
+  Open `.env` and set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, or both. If you set only the OpenAI key, also set `LLM_PROVIDER=openai`. You can leave every other setting as it is.
+
+- **No API key: a local model.** Install [Ollama](https://ollama.com/download), then download the model, about 3.3 GB:
+
+  ```bash
+  ollama pull gemma3:4b
+  ```
+
+  There is nothing to put in `.env`. The app finds Ollama by itself while it is running. It is slower than the hosted models; see [Local model](#local-model-no-api-key).
 
 **3. Start the backend** in its own terminal.
 
@@ -61,7 +73,7 @@ npm install
 npm run dev
 ```
 
-**5. Open <http://localhost:5173>.** The header shows an **AI model** dropdown when a key is set, or **AI off: no LLM key** when none is.
+**5. Open <http://localhost:5173>.** The header shows an **AI model** dropdown when a model is available, or **AI off: no model set up** when none is. In that case, paste a key under **API keys** in the header, or in the Summary or Chat tab of any paper. Their **Check again** button finds Ollama as soon as its model is pulled.
 
 To stop the app, press Ctrl+C in both terminals. Your library is kept in `data/` and is there again the next time you start it.
 
@@ -86,7 +98,7 @@ Run the same steps in PowerShell, with these changes: use `python` instead of `p
 4. **Paper page → Chat.** Click one of the example questions or type your own. Click a citation number to see the passage it refers to.
 5. **Paper page → Extracted text.** Shows exactly what the AI works from: the cleaned text, split into sections and chunks.
 
-Use the **AI model** dropdown in the header to switch between Claude and OpenAI when both keys are set. The app remembers your choice in this browser.
+Use the **AI model** dropdown in the header to switch between the available models: Claude, OpenAI and Ollama. The app remembers your choice in this browser.
 
 | Search | Library |
 |---|---|
@@ -95,6 +107,26 @@ Use the **AI model** dropdown in the header to switch between Claude and OpenAI 
 | Summary | Uploaded PDF |
 |---|---|
 | ![Structured summary](docs/images/summary.png) | ![Metadata extracted from an uploaded PDF](docs/images/upload.png) |
+
+## Local model (no API key)
+
+[Ollama](https://ollama.com) runs open models on your own computer. The app uses it when it is running and has the model pulled, so you can use the AI features without an account, a key or any `.env` setting:
+
+```bash
+ollama pull gemma3:4b
+```
+
+The app checks for Ollama on every AI request, so there is no restart to do. If the app was already open, click **Check again** in the Summary or Chat tab. Ollama is listed after Claude and OpenAI in the **AI model** dropdown, and it is the default only when no key is set.
+
+| | Local model (Ollama) | Claude or OpenAI |
+|---|---|---|
+| Setup | Install Ollama and download about 3.3 GB | Create an account, buy credit, and paste a key into `.env` |
+| Cost | Free | A fraction of a cent per summary or answer |
+| Privacy | Paper text never leaves your computer | Selected excerpts are sent to the provider |
+| Quality | Good summaries and cited answers, but less precise | Better at following instructions and at subtle questions |
+| Speed | Without a GPU, slow: about 1 minute for an upload's metadata pass, 5 to 6 minutes for a summary and 2 minutes for an answer (measured on 12 CPU threads) | A few seconds |
+
+On a computer with a supported GPU or Apple silicon, Ollama is many times faster than these CPU timings. To use a different model, pull it and set `OLLAMA_MODEL` in `.env`. The model must cite excerpts as the app asks: `llama3.2:3b` and `qwen2.5:3b` did not, so their answers are rejected. See [the planning record](docs/PLANNING.md#6-later-decisions) for how the default was chosen.
 
 ## How token use is kept low
 
@@ -108,7 +140,7 @@ The LLM never receives a whole paper. Each request is limited as follows.
 | Summary | The sections are ranked: abstract, conclusion, introduction and results first, related work and appendices last | The top-ranked sections, about 8k tokens of paper text at most. The result is cached, so it is sent only once |
 | Question | The question is embedded and compared with every chunk (NumPy cosine similarity) | The abstract, the start of the conclusion and the most relevant chunks, about 3k tokens at most, plus up to 1.5k tokens of recent conversation |
 
-Token budgets are estimated at 3 characters per token, which holds for both Claude's and OpenAI's tokenizers. The instructions add a few hundred tokens to each request. Every summary and answer shows its own token counts, so you can see what each one cost. The default models are the cheap, fast tiers (`claude-haiku-5-5` and `gpt-5.4-mini`), and you can change them in `.env`.
+Token budgets are estimated at 3 characters per token, which holds for both Claude's and OpenAI's tokenizers. The instructions add a few hundred tokens to each request. Every summary and answer shows its own token counts, so you can see what each one cost; with Ollama they cost nothing. The default models are the cheap, fast tiers (`claude-haiku-5-5` and `gpt-5.4-mini`) and `gemma3:4b` for Ollama, and you can change them in `.env`.
 
 ## Architecture
 
@@ -132,7 +164,8 @@ Token budgets are estimated at 3 characters per token, which holds for both Clau
 │  metadata:  heuristics → LLM (1st page only)           │
 │             → Semantic Scholar / arXiv lookup          │
 │  retrieval  ────> fastembed vectors, NumPy cosine top-k│
-│  summaries, chat ──> llm { Anthropic | OpenAI }        │ (external)
+│  summaries, chat ──> llm { Anthropic | OpenAI |        │ (external)
+│                           Ollama }                     │ (local)
 ├────────────────────────────────────────────────────────┤
 │ Storage: SQLite via SQLAlchemy                         │
 │   papers · chunks · summaries · chat_messages          │
@@ -152,19 +185,23 @@ The design decisions behind this, and the alternatives that were considered, are
 
 ## Configuration
 
-All settings are read from `.env` in the repo root. Only an API key is needed.
+All settings are read from `.env` in the repo root. None are required: with Ollama running, the app works without a `.env` file.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | none | At least one is needed for summaries, Q&A and the LLM metadata pass |
-| `LLM_PROVIDER` | `anthropic` | The default provider, `anthropic` or `openai`. Users can switch in the header |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | none | Enable Claude and OpenAI. Summaries, Q&A and the LLM metadata pass need one of these or Ollama |
+| `LLM_PROVIDER` | `anthropic` | The default provider, `anthropic`, `openai` or `ollama`. If it is not available, the first one that is becomes the default. Users can switch in the header |
 | `ANTHROPIC_MODEL`, `OPENAI_MODEL` | `claude-haiku-5-5`, `gpt-5.4-mini` | Model overrides |
-| `LLM_TIMEOUT` | `90` | Seconds before an LLM request gives up |
+| `LLM_TIMEOUT` | `90` | Seconds before a Claude or OpenAI request gives up |
+| `OLLAMA_URL` | `http://localhost:11434` | Where the app looks for Ollama. Leave it blank to stop looking |
+| `OLLAMA_MODEL` | `gemma3:4b` | The local model. It must be pulled with `ollama pull` |
+| `OLLAMA_TIMEOUT` | `900` | Seconds before an Ollama request gives up |
+| `OLLAMA_NUM_CTX` | `16384` | The local model's context window in tokens. Summaries need about 9k |
 | `SEMANTIC_SCHOLAR_API_KEY` | none | Raises Semantic Scholar's rate limits. Without a key, searches often fall back to arXiv |
 | `DATA_DIR` | `data/` | Where the database, PDFs and embedding model are stored |
 | `BACKEND_URL` | `http://localhost:8000` | Where the frontend dev server sends `/api` requests. Change it if the backend runs on another port |
 
-Restart the backend after you change `.env`.
+Restart the backend after you edit `.env` by hand. Keys saved under **API keys** in the app are written to `.env` and take effect at once, and Ollama needs no restart either: the app checks for it on every AI request. A variable set in your shell, such as an exported `ANTHROPIC_API_KEY`, overrides `.env`.
 
 ## API
 
@@ -184,7 +221,8 @@ Every route is under `/api`. While the backend is running, interactive documenta
 | `GET /api/papers/{id}/chunks` | The extracted text chunks |
 | `GET`, `POST /api/papers/{id}/summary` | Read the cached summary, or generate one (`?refresh=true` regenerates it) |
 | `GET`, `POST`, `DELETE /api/papers/{id}/chat` | Read the conversation, ask a question, or clear the conversation |
-| `GET /api/settings/llm` | The LLM providers that have keys, and the default |
+| `GET /api/settings/llm` | The LLM providers that can answer, the default, and whether Ollama is running. API keys are never returned |
+| `PUT`, `DELETE /api/settings/llm/keys/{provider}` | Check an Anthropic or OpenAI key and save it to `.env` (body `{"key": "..."}`), or remove it. Both answer with the LLM settings, never the key |
 
 ## Project layout
 
@@ -224,7 +262,11 @@ To check that the frontend compiles, run `npm run build` from `frontend/`.
 | Symptom | Fix |
 |---|---|
 | The header says **backend unreachable** | Start the backend (step 3) on port 8000, or set `BACKEND_URL` if it runs on a different port. Then reload the page |
-| The header says **AI off: no LLM key** | Add a key to `.env` and restart the backend |
+| The header says **AI off: no model set up** | Paste a key under **API keys** in the header. Or start Ollama and run `ollama pull gemma3:4b`, then click **Check again** in the Summary or Chat tab |
+| **Save key** says the key was rejected | Copy the whole key again from the provider's console. The key must also be allowed to use the configured model (`ANTHROPIC_MODEL` or `OPENAI_MODEL`) |
+| A key saved in the app is gone after a restart | A variable with the same name in your shell overrides `.env`. Run `unset ANTHROPIC_API_KEY OPENAI_API_KEY` before starting the backend |
+| A summary or upload takes minutes with Ollama | Local models are slow on a computer without a GPU; see [Local model](#local-model-no-api-key). Use a smaller model, or an API key |
+| *Ollama took longer than 900 seconds* | Raise `OLLAMA_TIMEOUT` in `.env`, or use a smaller model |
 | Search says *Semantic Scholar unavailable (HTTP 429)* | Semantic Scholar is rate-limiting keyless requests. The results come from arXiv instead. Add `SEMANTIC_SCHOLAR_API_KEY` to avoid this |
 | A paper shows **No PDF** | It has no open-access copy. Open the paper and use **Upload PDF** to attach one |
 | A paper shows **PDF unreadable** | The PDF has no extractable text, for example because it is a scan. Try a different copy |

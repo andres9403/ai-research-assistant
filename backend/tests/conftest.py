@@ -14,6 +14,9 @@ os.environ["SEMANTIC_SCHOLAR_API_KEY"] = ""
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["OPENAI_API_KEY"] = ""
 os.environ["LLM_PROVIDER"] = "anthropic"
+# Ollama is probed at this URL; the network mock answers as if it were stopped.
+os.environ["OLLAMA_URL"] = "http://localhost:11434"
+os.environ["OLLAMA_MODEL"] = ""
 
 import re  # noqa: E402
 import zlib  # noqa: E402
@@ -23,6 +26,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import config  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -42,18 +46,23 @@ def client():
 EMPTY_ARXIV_FEED = b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
 
 
+def ollama_stopped(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("connection refused", request=request)
+
+
 class FakeNetwork:
     """Answers every outbound request the app makes; nothing reaches the internet.
 
     Register handlers per host with `network.on(host, handler)`. Semantic Scholar
-    answers 404 and arXiv an empty feed unless a test says otherwise; other
-    unregistered hosts fail the test.
+    answers 404, arXiv an empty feed and Ollama (localhost) refuses connections
+    unless a test says otherwise; other unregistered hosts fail the test.
     """
 
     def __init__(self):
         self.handlers = {
             "api.semanticscholar.org": lambda r: httpx.Response(404, json={}),
             "export.arxiv.org": lambda r: httpx.Response(200, content=EMPTY_ARXIV_FEED),
+            "localhost": ollama_stopped,
         }
         self.requests: list[httpx.Request] = []
         self.unexpected: list[str] = []
@@ -79,6 +88,17 @@ def network(monkeypatch):
     monkeypatch.setattr(http, "make_download_client", mock_client)
     yield fake
     assert not fake.unexpected, f"unexpected HTTP requests: {fake.unexpected}"
+
+
+@pytest.fixture(autouse=True)
+def env_file(monkeypatch, tmp_path):
+    """Keys saved in the app go to a temp `.env`, never the repo's real one, and
+    the key settings they change are restored after each test."""
+    path = tmp_path / ".env"
+    monkeypatch.setattr(config, "ENV_FILE", path)
+    monkeypatch.setattr(settings, "anthropic_api_key", settings.anthropic_api_key)
+    monkeypatch.setattr(settings, "openai_api_key", settings.openai_api_key)
+    return path
 
 
 class FakeLLM:
@@ -108,7 +128,7 @@ class FakeLLM:
 def fake_llm(monkeypatch):
     """Makes a fake provider the only configured LLM (as "anthropic")."""
     fake = FakeLLM()
-    monkeypatch.setattr(llm, "available", lambda: {fake.name: fake})
+    monkeypatch.setattr(llm, "available", lambda ollama=None: {fake.name: fake})
     return fake
 
 

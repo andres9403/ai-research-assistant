@@ -38,11 +38,13 @@ def test_upload_extracts_metadata_and_chunks(client, network):
     assert paper["metadata_source"] == "pdf"
     assert "pdf_path" not in paper
 
+    # Ollama was checked for a local LLM (it is stopped, so there is no LLM pass).
     # Semantic Scholar was asked first by arXiv id, then by title; then arXiv by id,
     # then by title phrase and title words. Nothing matched, so the PDF's metadata stands.
     asked = [(r.url.host, r.url.path, r.url.params.get("id_list") or r.url.params.get("search_query"))
              for r in network.requests]
     assert asked == [
+        ("localhost", "/api/tags", None),
         ("api.semanticscholar.org", "/graph/v1/paper/arXiv:2401.01234", None),
         ("api.semanticscholar.org", "/graph/v1/paper/search/match", None),
         ("export.arxiv.org", "/api/query", "2401.01234"),
