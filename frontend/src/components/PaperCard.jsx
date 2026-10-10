@@ -36,6 +36,12 @@ export default function PaperCard({ paper, actions, href }) {
       <p className="card-meta">
         {formatAuthors(paper.authors)}
         {paper.year && <> · {paper.year}</>}
+        {paper.venue && <> · {paper.venue}</>}
+        {paper.citation_count != null && (
+          <span className="tag">
+            {paper.citation_count.toLocaleString()} citation{paper.citation_count === 1 ? "" : "s"}
+          </span>
+        )}
         <span className="tag">{SOURCE_LABELS[paper.source] || paper.source}</span>
         <PdfStatus paper={paper} />
         {paper.metadata_source?.endsWith("_title") && (

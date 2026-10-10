@@ -96,6 +96,25 @@ input, select {
 .filters input[type="search"] { flex: 1; }
 .filters input[type="number"] { width: 130px; }
 
+.search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  margin: 0 0 12px;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.search-filters legend { padding: 0 4px; font-size: 0.85rem; font-weight: 600; }
+.search-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+.search-filters input[type="number"] { width: 100px; }
+.search-filters label.checkbox { flex-direction: row; align-items: center; gap: 6px; }
+.search-filters .error-inline, .filter-hint { flex-basis: 100%; margin: 0; }
+.filter-hint { font-size: 0.8rem; }
+.search-notes { margin: -4px 0 12px; padding-left: 18px; color: var(--muted); font-size: 0.85rem; }
+
 .list { display: flex; flex-direction: column; gap: 12px; }
 .card {
   background: var(--surface);
