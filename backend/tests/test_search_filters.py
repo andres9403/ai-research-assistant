@@ -51,8 +51,8 @@ def test_s2_author_and_ordering_are_applied_locally_to_a_full_page():
     assert "author" not in request.params and "sort" not in request.params
     assert request.params["limit"] == 100
     assert request.notes == [
-        "Semantic Scholar can't do this itself, so the author filter and the ordering "
-        "were applied to its 100 most relevant matches."
+        "Semantic Scholar has no author filter or sort option, so they were applied to its "
+        "100 most relevant matches."
     ]
 
 

@@ -135,15 +135,15 @@ def s2_request(query: str, limit: int, filters: SearchFilters) -> ProviderReques
 
     local = []
     if filters.author:
-        local.append("the author filter")
+        local.append("author filter")
     if filters.sort != "relevance":
-        local.append("the ordering")
+        local.append("sort option")
     notes = []
     if local:
         params["limit"] = max(limit, S2_MAX_LIMIT)
         notes.append(
-            f"Semantic Scholar can't do this itself, so {' and '.join(local)} "
-            f"{'were' if len(local) > 1 else 'was'} applied to its {params['limit']} most relevant matches."
+            f"Semantic Scholar has no {' or '.join(local)}, so {'they were' if len(local) > 1 else 'it was'} "
+            f"applied to its {params['limit']} most relevant matches."
         )
     return ProviderRequest(params, flags=flags, notes=notes)
 
