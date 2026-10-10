@@ -1,10 +1,13 @@
-"""The LLM providers behind one small interface: Anthropic and OpenAI, chosen per request.
+"""The LLM providers behind one small interface: Anthropic, OpenAI and a local Ollama, chosen per request.
 
-A provider is available when its API key is set in `.env`. Every call asks for
-JSON that matches a schema (structured outputs on both APIs), so callers get a
-dict back and never parse free text.
+Anthropic and OpenAI are available when their API key is set in `.env`. Ollama
+needs no key: it is available while its server answers at OLLAMA_URL and has
+the model pulled, checked live so pulling a model needs no backend restart.
+Every call asks for JSON that matches a schema (structured outputs on all
+three), so callers get a dict back and never parse free text.
 
-Tests replace `available()` with fakes; nothing here may reach a real API in tests.
+Tests replace `available()` with fakes, and the conftest network mock stands in
+for Ollama; nothing here may reach a real API in tests.
 """
 
 import json
@@ -15,17 +18,24 @@ from functools import lru_cache
 from typing import Protocol
 
 import anthropic
+import httpx
 import openai
 
 from app.config import settings
+from app.services import http
 
 log = logging.getLogger(__name__)
 
-# Cheap, fast tiers by default (planning Q13); `.env` can override each.
-DEFAULT_MODELS = {"anthropic": "claude-haiku-5-5", "openai": "gpt-5.4-mini"}
-LABELS = {"anthropic": "Anthropic Claude", "openai": "OpenAI"}
+# Cheap, fast tiers by default (planning Q13); `.env` can override each. The
+# Ollama default runs on a CPU and, unlike the 3B models tried, cites excerpts (issue #8).
+DEFAULT_MODELS = {"anthropic": "claude-haiku-5-5", "openai": "gpt-5.4-mini", "ollama": "gemma3:4b"}
+LABELS = {"anthropic": "Anthropic Claude", "openai": "OpenAI", "ollama": "Ollama (local)"}
 PROVIDERS = tuple(DEFAULT_MODELS)
 REASONING_MODEL = re.compile(r"^(gpt-5|o\d)")  # OpenAI models that take reasoning_effort
+OLLAMA_PROBE_TIMEOUT = 2.0  # seconds; a stopped server refuses the connection at once
+# Tokens. Answers and summaries need a few hundred; at a few tokens/s on a CPU, a small
+# model stuck repeating itself would otherwise run until OLLAMA_TIMEOUT.
+OLLAMA_MAX_OUTPUT_TOKENS = 1024
 
 
 class LLMError(Exception):
@@ -144,6 +154,59 @@ class OpenAIProvider:
         )
 
 
+class OllamaProvider:
+    """A model served by a local Ollama, through its native chat API.
+
+    The native API, unlike Ollama's OpenAI-compatible one, takes `num_ctx`;
+    without it Ollama's default context silently truncates summary input.
+    """
+
+    name = "ollama"
+
+    def __init__(self, base_url: str, model: str):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+
+    def complete_json(self, *, system, prompt, schema, schema_name, max_tokens) -> LLMResult:
+        body = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            "format": schema,
+            "stream": False,
+            "options": {
+                "num_ctx": settings.ollama_num_ctx,
+                "num_predict": min(max_tokens, OLLAMA_MAX_OUTPUT_TOKENS),
+            },
+        }
+        try:
+            with http.make_client(timeout=settings.ollama_timeout) as client:
+                response = client.post(f"{self.base_url}/api/chat", json=body)
+        except httpx.TimeoutException as exc:
+            raise LLMError(
+                f"Ollama took longer than {settings.ollama_timeout:.0f} seconds. "
+                "Raise OLLAMA_TIMEOUT or use a smaller model."
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Couldn't reach Ollama at {self.base_url}. Check that it is running.") from exc
+
+        if response.status_code == 404:
+            raise LLMError(f"Ollama doesn't have the model {self.model!r}. Run: ollama pull {self.model}")
+        if response.is_error:
+            log.warning("Ollama error %s: %s", response.status_code, response.text[:500])
+            raise LLMError(f"Ollama returned an error (HTTP {response.status_code}).")
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise LLMError("Ollama returned a response that isn't JSON.") from exc
+        if data.get("done_reason") == "length":
+            raise LLMError("The model's answer was cut off before it finished.")
+        return LLMResult(
+            data=_parse((data.get("message") or {}).get("content") or ""),
+            input_tokens=data.get("prompt_eval_count") or 0,
+            output_tokens=data.get("eval_count") or 0,
+        )
+
+
 def _parse(text: str) -> dict:
     try:
         data = json.loads(text)
@@ -154,23 +217,71 @@ def _parse(text: str) -> dict:
     return data
 
 
-@lru_cache(maxsize=4)
-def _build(name: str, api_key: str, model: str) -> LLMProvider:
-    cls = AnthropicProvider if name == "anthropic" else OpenAIProvider
-    return cls(api_key, model)
+@lru_cache(maxsize=8)
+def _build(name: str, credential: str, model: str) -> LLMProvider:
+    """A provider; `credential` is the API key, or the server URL for Ollama."""
+    cls = {"anthropic": AnthropicProvider, "openai": OpenAIProvider, "ollama": OllamaProvider}[name]
+    return cls(credential, model)
 
 
-def available() -> dict[str, LLMProvider]:
-    """The providers that have an API key, keyed by name, in display order."""
+@dataclass
+class OllamaStatus:
+    model: str  # the model the app uses, pulled or not
+    running: bool
+    pulled: bool
+
+
+def _with_tag(model: str) -> str:
+    """Ollama lists `llama3.2` as `llama3.2:latest`."""
+    return model if ":" in model else f"{model}:latest"
+
+
+def ollama_status() -> OllamaStatus:
+    """Whether a local Ollama answers at OLLAMA_URL and has the model pulled."""
+    model = settings.ollama_model or DEFAULT_MODELS["ollama"]
+    if not settings.ollama_url:
+        return OllamaStatus(model, running=False, pulled=False)
+    try:
+        with http.make_client(timeout=OLLAMA_PROBE_TIMEOUT) as client:
+            response = client.get(f"{settings.ollama_url.rstrip('/')}/api/tags")
+            response.raise_for_status()
+            names = {m["name"] for m in response.json()["models"]}
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return OllamaStatus(model, running=False, pulled=False)
+    return OllamaStatus(model, running=True, pulled=_with_tag(model) in names)
+
+
+def available(ollama: OllamaStatus | None = None) -> dict[str, LLMProvider]:
+    """The providers that can answer now, keyed by name, in display order.
+
+    Pass `ollama` to reuse a status the caller already fetched.
+    """
     configured = {
         "anthropic": (settings.anthropic_api_key, settings.anthropic_model),
         "openai": (settings.openai_api_key, settings.openai_model),
     }
-    return {
+    providers = {
         name: _build(name, key, model or DEFAULT_MODELS[name])
         for name, (key, model) in configured.items()
         if key
     }
+    ollama = ollama or ollama_status()
+    if ollama.pulled:
+        providers["ollama"] = _build("ollama", settings.ollama_url, ollama.model)
+    return providers
+
+
+def setup_hint(ollama: OllamaStatus) -> str:
+    """What to do to get an LLM, for a user who has none."""
+    if ollama.running:
+        return (
+            f"Ollama is running but doesn't have {ollama.model}. Run: ollama pull {ollama.model} "
+            "(or add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend)."
+        )
+    return (
+        f"Install Ollama from https://ollama.com and run: ollama pull {ollama.model} "
+        "(no key needed), or add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend."
+    )
 
 
 def default_name(providers: dict[str, LLMProvider]) -> str | None:
@@ -182,15 +293,18 @@ def default_name(providers: dict[str, LLMProvider]) -> str | None:
 
 def resolve(name: str | None = None) -> LLMProvider:
     """The provider called `name`, or the default one. Raises LLMNotConfigured."""
-    providers = available()
+    ollama = ollama_status()
+    providers = available(ollama)
     if not providers:
-        raise LLMNotConfigured(
-            "No LLM is configured. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend."
-        )
+        raise LLMNotConfigured(f"No LLM is set up. {setup_hint(ollama)}")
     if name is None:
         return providers[default_name(providers)]
     if name not in PROVIDERS:
         raise LLMNotConfigured(f"Unknown LLM provider {name!r}.")
+    if name == "ollama" and name not in providers:
+        if ollama.running:
+            raise LLMNotConfigured(f"Ollama doesn't have {ollama.model}. Run: ollama pull {ollama.model}")
+        raise LLMNotConfigured(f"Ollama isn't running at {settings.ollama_url or '(OLLAMA_URL is blank)'}.")
     if name not in providers:
         raise LLMNotConfigured(f"{LABELS[name]} has no API key in .env.")
     return providers[name]

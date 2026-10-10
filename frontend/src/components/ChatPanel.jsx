@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
-import { useLlm } from "../llm.jsx";
+import { AiSetupHint, useLlm } from "../llm.jsx";
 
 // Offered while the thread is empty; the tutorial's demo asks the same five.
 const EXAMPLES = [
@@ -86,11 +86,7 @@ export default function ChatPanel({ paper, version }) {
           features.
         </p>
       )}
-      {ready && !model && (
-        <p className="muted">
-          No AI model is set up. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend.
-        </p>
-      )}
+      {ready && !model && <AiSetupHint />}
 
       {messages.length === 0 && !pending && canAsk && (
         <div className="chat-empty">

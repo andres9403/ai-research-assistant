@@ -79,11 +79,22 @@ class LLMProviderOut(BaseModel):
     model: str
 
 
+class OllamaOut(BaseModel):
+    """The local Ollama the app looks for, so the UI can say what to install or pull."""
+
+    model: str
+    running: bool
+
+
 class LLMSettingsOut(BaseModel):
-    """Only providers with an API key are listed; `default` is None when there are none."""
+    """Only providers that can answer are listed; `default` is None when there are none.
+
+    API keys never leave the backend: providers are described by name and model only.
+    """
 
     default: str | None
     providers: list[LLMProviderOut]
+    ollama: OllamaOut
 
 
 class SummaryContent(BaseModel):

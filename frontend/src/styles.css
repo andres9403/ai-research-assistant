@@ -292,3 +292,5 @@ textarea {
 .answer-meta { margin: 8px 0 0; }
 .ask { display: flex; flex-direction: column; gap: 8px; }
 .ask textarea { width: 100%; }
+
+.ai-setup { margin-bottom: 12px; }

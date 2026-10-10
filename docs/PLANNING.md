@@ -119,3 +119,36 @@ Each user action moves through the system like this:
 | M3 LLM layer | Both providers, provider dropdown, LLM metadata pass, structured summaries | A summary is generated from the paper's content |
 | M4 Q&A | Embeddings, retrieval, chat with citations | The five example questions are answered with citations |
 | M5 Finish | Polish, full README, `docs/TUTORIAL.md` | A fresh clone runs by following the README alone |
+
+## 6. Later decisions
+
+### Issue #8 — AI without a manual API key (October 10, 2026)
+
+Before this change, summaries, Q&A and the LLM metadata pass worked only after the user got an Anthropic or OpenAI key, pasted it into `.env` and restarted the backend. Issue #8 asked for a lower-friction path.
+
+| Option | Privacy | Operating cost | Setup time | Feature quality | Verdict |
+|---|---|---|---|---|---|
+| Local model through Ollama | Papers never leave the machine | None | Install Ollama and pull a 3.3 GB model, a few minutes | Weaker than Claude Haiku or GPT mini, and slow without a GPU | **Chosen** |
+| In-app key entry (a form that keeps the key in backend memory) | Paper text still goes to the provider | The user's own API bill | Still needs a provider account and key | Same as today | Not chosen: it saves editing `.env` but not getting a key |
+| Hosted backend or authenticated proxy | Paper text goes to the provider through a third party | Someone pays for every user's requests, plus hosting | None for the user | Same as today | Not chosen: needs a funded key, authentication, rate limits and an ongoing deployment, which is beyond a project that "does not need to be production-ready" |
+| Demo mode with canned output | Nothing leaves the machine | None | None | No real AI; the output is simulated | Not chosen: it would mislead in the demo video |
+
+How the chosen option works:
+
+- Ollama is a third provider next to Anthropic and OpenAI. It needs no key. The backend asks Ollama for its model list (`GET /api/tags`, 2-second timeout) on every AI request and every settings check. Ollama is offered only when it is running **and** the configured model is pulled. Pulling a model therefore needs no backend restart, and the in-app **Check again** button picks it up.
+- Requests use Ollama's native `/api/chat` with the JSON schema as `format`, as structured outputs do on the other two providers. They do not use Ollama's OpenAI-compatible endpoint, because that endpoint cannot set `num_ctx`. Ollama's default context would silently cut the ~8k-token summary input short. The app asks for a 16k-token context.
+- The default model is `gemma3:4b` (3.3 GB), overridable with `OLLAMA_MODEL`. Three CPU-sized models were run on the tutorial's five questions about *Attention Is All You Need*, with the app's own chat prompt. `llama3.2:3b` and `qwen2.5:3b` gave sensible answers but cited no excerpt in any of them, so the app rejected all ten (Q&A refuses uncited answers). `gemma3:4b` cited correctly in all five.
+- Ollama has its own timeout, `OLLAMA_TIMEOUT` (900 s), because CPU inference is far slower than the hosted APIs. Its output is capped at 1,024 tokens. Answers and summaries need a few hundred, and in testing a small model occasionally repeated itself until the timeout. With the cap, that run ends in minutes as "cut off" instead.
+- The `.env` keys work exactly as before. When a key is set, its provider stays the default; Ollama is listed last.
+- Ollama has no credential. `GET /api/settings/llm` describes providers by name and model only, so no key ever reaches the browser.
+
+Measured end to end on the development machine (WSL2, 12 CPU threads, no GPU), with no key set and *Attention Is All You Need* uploaded:
+
+| Step | `gemma3:4b` on the CPU |
+|---|---|
+| Speed | Reads prompts at 22–27 tokens/s, writes at 6–7 tokens/s |
+| Upload with the first-page metadata pass | 58 s (the upload request waits for it) |
+| Summary (6,247 tokens in, 568 out) | 326 s |
+| Question with citations (~2,200 tokens in) | 115 s, cited correctly |
+
+Loading the model before the first request adds about a minute. A machine with a supported GPU or Apple silicon is many times faster. The upload wait is the most noticeable cost. Moving the metadata pass to a background task would remove it, but that changes the upload flow for every provider, so it was left for a follow-up.

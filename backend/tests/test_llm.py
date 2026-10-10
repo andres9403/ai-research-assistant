@@ -171,7 +171,11 @@ def keys(monkeypatch):
 
 
 def test_settings_lists_no_providers_without_keys(client):
-    assert client.get("/api/settings/llm").json() == {"default": None, "providers": []}
+    assert client.get("/api/settings/llm").json() == {
+        "default": None,
+        "providers": [],
+        "ollama": {"model": "gemma3:4b", "running": False},
+    }
 
 
 def test_settings_lists_only_providers_with_keys(client, keys):
@@ -179,6 +183,7 @@ def test_settings_lists_only_providers_with_keys(client, keys):
     assert client.get("/api/settings/llm").json() == {
         "default": "anthropic",
         "providers": [{"name": "anthropic", "label": "Anthropic Claude", "model": "claude-haiku-5-5"}],
+        "ollama": {"model": "gemma3:4b", "running": False},
     }
 
     keys(anthropic_key="sk-ant-test", openai_key="sk-test", default="openai", openai_model="gpt-4.1-mini")
@@ -198,7 +203,7 @@ def test_default_falls_back_to_a_provider_with_a_key(client, keys):
 
 def test_resolve_explains_what_is_missing(keys):
     keys()
-    with pytest.raises(llm.LLMNotConfigured, match="No LLM is configured"):
+    with pytest.raises(llm.LLMNotConfigured, match="No LLM is set up"):
         llm.resolve()
     keys(anthropic_key="sk-ant-test")
     with pytest.raises(llm.LLMNotConfigured, match="OpenAI has no API key"):
