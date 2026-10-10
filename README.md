@@ -105,10 +105,10 @@ The LLM never receives a whole paper. Each request is limited as follows.
 | PDF processing | PyMuPDF extracts the text, removes headers, footers and page numbers, finds section headings, drops references and acknowledgements, and splits sections into chunks of about 250 words | Nothing |
 | Upload metadata | Heuristics read the PDF metadata and first-page layout | The first page's text only, capped at about 2k tokens |
 | Embeddings | `fastembed` with `BAAI/bge-small-en-v1.5`, running on the CPU | Nothing |
-| Summary | The sections are ranked: abstract, conclusion, introduction and results first, related work and appendices last | The top-ranked sections, about 8k tokens at most. The result is cached, so it is sent only once |
+| Summary | The sections are ranked: abstract, conclusion, introduction and results first, related work and appendices last | The top-ranked sections, about 8k tokens of paper text at most. The result is cached, so it is sent only once |
 | Question | The question is embedded and compared with every chunk (NumPy cosine similarity) | The abstract, the start of the conclusion and the most relevant chunks, about 3k tokens at most, plus up to 1.5k tokens of recent conversation |
 
-Every summary and answer shows its own token counts, so you can see what each one cost. The default models are the cheap, fast tiers (`claude-haiku-5-5` and `gpt-5.4-mini`), and you can change them in `.env`.
+Token budgets are estimated at 3 characters per token, which holds for both Claude's and OpenAI's tokenizers. The instructions add a few hundred tokens to each request. Every summary and answer shows its own token counts, so you can see what each one cost. The default models are the cheap, fast tiers (`claude-haiku-5-5` and `gpt-5.4-mini`), and you can change them in `.env`.
 
 ## Architecture
 
