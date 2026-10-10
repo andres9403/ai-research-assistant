@@ -13,5 +13,6 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: { "/api": env.BACKEND_URL || "http://localhost:8000" },
     },
+    test: { environment: "jsdom" },
   };
 });

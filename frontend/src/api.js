@@ -27,7 +27,7 @@ function query(params) {
 
 export const api = {
   health: () => request("/health"),
-  search: (q, limit = 20) => request(`/search${query({ q, limit })}`),
+  search: (q, filters = {}, limit = 20) => request(`/search${query({ q, limit, ...filters })}`),
   listPapers: (filters = {}) => request(`/papers${query(filters)}`),
   savePaper: (paper) =>
     request("/papers", {

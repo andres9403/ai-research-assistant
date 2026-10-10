@@ -28,13 +28,19 @@ The demo uses two papers:
 
 **Say:** "This is an AI research assistant. It finds research papers, keeps them in a local library, and uses an LLM to summarize them and answer questions. The answers are based on each paper's full text, not just its abstract. It runs on your own machine, with a FastAPI backend, a React frontend and a SQLite database."
 
-## Scene 2 — Search by topic (45 s)
+## Scene 2 — Search by topic (75 s)
 
 **Do:** Type `retrieval augmented generation` in the search box and press Enter. Scroll slowly through a few results. Click **Show more** on one abstract.
 
 **Say:** "Search goes to the Semantic Scholar API. Each result shows the title, authors, year, abstract and a link to the paper, and the PDF tag marks papers that have an open-access PDF. If Semantic Scholar is rate-limited, the app falls back to arXiv automatically, and the line above the results says which source answered."
 
 > The line above the results reads, for example, *20 results from Semantic Scholar*, or *20 results from arXiv · Semantic Scholar unavailable (HTTP 429)*. Either is fine for the demo.
+
+**Do:** Click **Filters**. Type `Lewis` as the author, set both years to `2020`, choose **Most cited** under **Sort by**, and click **Search**. Then click **Clear filters**.
+
+**Say:** "Filters narrow a search the way a library catalogue does: by author, year range, venue, paper type and open access, sorted by relevance, date or citations. If a source can't apply one of them, a note under the results says so instead of pretending it did. Clear filters takes me back to the plain keyword search."
+
+> Semantic Scholar has no author filter or sort option of its own, so the app applies those to its 100 best matches and says so in a note. arXiv has no venues, paper types or citation counts, so after a fallback those filters are listed as not applied.
 
 ## Scene 3 — Save papers (45 s)
 
