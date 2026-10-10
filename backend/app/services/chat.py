@@ -4,7 +4,8 @@ Each question sends only the abstract, the start of the conclusion and the chunk
 most relevant to it (about 3k tokens at most), plus the last few turns of the
 conversation (about 1.5k tokens at most). The answer cites the numbered excerpts
 it used; those citations are renumbered in order of appearance and saved with a
-copy of the cited text, so they stay readable later.
+copy of the cited text, so they stay readable later. An answer that cites none of
+the excerpts is rejected, unless it says the excerpts don't cover the question.
 """
 
 import re
@@ -30,8 +31,12 @@ SCHEMA = {
             "type": "string",
             "description": "The answer, citing excerpt numbers in square brackets after each claim.",
         },
+        "found": {
+            "type": "boolean",
+            "description": "False only when the excerpts don't contain the answer.",
+        },
     },
-    "required": ["answer"],
+    "required": ["answer", "found"],
     "additionalProperties": False,
 }
 
@@ -46,8 +51,8 @@ Cite the excerpt behind every claim with its number in square brackets right aft
 cite several as [1][3]. Use only the numbers of the excerpts you were given. Don't present the paper's \
 own reference markers, such as [12] or (Smith et al., 2020), as citations.
 
-If the excerpts don't contain the answer, say so plainly, and mention what they do cover that is \
-related; don't guess. Be concise: usually two to five sentences, or a short list with each item on its \
+If the excerpts don't contain the answer, say so plainly, mention what they do cover that is related, \
+and set found to false; don't guess. Otherwise set found to true. Be concise: usually two to five sentences, or a short list with each item on its \
 own line starting with "- ". Use the paper's own names and numbers. Write plain text without markdown \
 headings or bold."""
 
@@ -153,6 +158,9 @@ def ask(session: Session, paper: Paper, question: str, provider: LLMProvider) ->
     if not raw:
         raise LLMError("The model returned an empty answer.")
     text, citations = cite(raw, excerpts)
+    # Only "the excerpts don't say" may stand without a passage to check it against.
+    if not citations and result.data.get("found") is not False:
+        raise LLMError("The model's answer cited none of the paper's passages.")
 
     asked = ChatMessage(role="user", content=question)
     answered = ChatMessage(

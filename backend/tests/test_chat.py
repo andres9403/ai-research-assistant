@@ -357,6 +357,30 @@ def test_empty_answer_is_an_error(client, fake_llm):
     assert client.get(f"/api/papers/{paper_id}/chat").json() == []
 
 
+def test_answer_citing_no_excerpt_is_an_error(client, fake_llm):
+    paper_id = upload(client).json()["id"]
+    for answer in [
+        {"answer": "Tokens go to two experts [99].", "found": True},
+        {"answer": "Tokens go to two experts.", "found": True},
+        {"answer": "Tokens go to two experts [12]."},  # no flag counts as found
+    ]:
+        fake_llm.answers["paper_answer"] = answer
+        resp = ask(client, paper_id, "What is routed?")
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "The model's answer cited none of the paper's passages."
+    assert client.get(f"/api/papers/{paper_id}/chat").json() == []
+
+
+def test_answer_the_excerpts_do_not_cover_needs_no_citation(client, fake_llm):
+    fake_llm.answers["paper_answer"] = {"answer": "The excerpts don't say [99].", "found": False}
+    paper_id = upload(client).json()["id"]
+    resp = ask(client, paper_id, "Who funded this work?")
+    assert resp.status_code == 200
+    answer = resp.json()["answer"]
+    assert (answer["content"], answer["citations"]) == ("The excerpts don't say.", [])
+    assert client.get(f"/api/papers/{paper_id}/chat").json()[1] == answer
+
+
 def test_embedding_model_failure_is_reported(client, fake_llm, fake_embedder):
     fake_llm.answers["paper_answer"] = {"answer": "x [1]"}
     paper_id = upload(client).json()["id"]
