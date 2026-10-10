@@ -2,8 +2,10 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { api } from "./api.js";
 
 // Which LLM the AI features use. The server lists only providers that can answer
-// (an API key in .env, or a local Ollama with the model pulled); the choice is
-// remembered in this browser.
+// (an API key, from .env or entered here, or a local Ollama with the model
+// pulled); the choice is remembered in this browser. API keys typed here go
+// straight to the backend, which saves them to .env; they are never stored in
+// the browser or sent back.
 const STORAGE_KEY = "llmProvider";
 const LlmContext = createContext(null);
 
@@ -31,6 +33,18 @@ export function LlmProvider({ children }) {
     refresh();
   }, []);
 
+  // A newly added key is what the user wants to use, so it becomes the choice.
+  async function saveKey(name, key) {
+    const s = await api.setApiKey(name, key);
+    setSettings({ state: "ok", ...s });
+    choose(name);
+  }
+
+  async function removeKey(name) {
+    const s = await api.removeApiKey(name);
+    setSettings({ state: "ok", ...s });
+  }
+
   function choose(name) {
     setChosen(name);
     try {
@@ -46,7 +60,7 @@ export function LlmProvider({ children }) {
   const current = settings.providers.find((p) => p.name === provider) || null;
 
   return (
-    <LlmContext.Provider value={{ settings, provider, current, choose, refresh }}>{children}</LlmContext.Provider>
+    <LlmContext.Provider value={{ settings, provider, current, choose, refresh, saveKey, removeKey }}>{children}</LlmContext.Provider>
   );
 }
 
@@ -54,13 +68,110 @@ export function useLlm() {
   return useContext(LlmContext);
 }
 
-// What to do when no provider can answer. The free path, a local Ollama, comes first.
+const KEY_PROVIDERS = [
+  ["anthropic", "Anthropic Claude"],
+  ["openai", "OpenAI"],
+];
+
+// What to do when no provider can answer: paste a key, or run a free local model.
 function setupText(ollama) {
   const model = ollama?.model || "gemma3:4b";
-  if (ollama?.running) {
-    return `Ollama is running but doesn't have ${model} yet. Run "ollama pull ${model}", then check again. Or add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend.`;
+  const local = ollama?.running
+    ? `Ollama is running but doesn't have ${model} yet: run "ollama pull ${model}", then check again.`
+    : `For a free local model instead, install Ollama from ollama.com, run "ollama pull ${model}", then check again.`;
+  return `Paste an Anthropic or OpenAI API key. ${local}`;
+}
+
+export function ApiKeyForm() {
+  const { saveKey } = useLlm();
+  const [name, setName] = useState(KEY_PROVIDERS[0][0]);
+  const [key, setKey] = useState("");
+  const [state, setState] = useState({ status: "idle" });
+  const saving = state.status === "saving";
+
+  async function submit(e) {
+    e.preventDefault();
+    setState({ status: "saving" });
+    try {
+      await saveKey(name, key);
+      setKey("");
+      setState({ status: "saved" });
+    } catch (err) {
+      setState({ status: "error", error: err.message });
+    }
   }
-  return `For a free local model, install Ollama from ollama.com and run "ollama pull ${model}", then check again. Or add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend.`;
+
+  return (
+    <form className="key-form" onSubmit={submit}>
+      <div className="key-row">
+        <select value={name} onChange={(e) => setName(e.target.value)} aria-label="Provider">
+          {KEY_PROVIDERS.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <input
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="Paste API key"
+          aria-label="API key"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+        />
+        <button type="submit" disabled={saving || !key.trim()}>
+          {saving ? "Checking…" : "Save key"}
+        </button>
+      </div>
+      {state.status === "error" && <p className="error small">{state.error}</p>}
+      {state.status === "saved" && <p className="small">Key saved. The AI features are on.</p>}
+      <p className="muted small">
+        The key is checked with the provider, then saved in .env on your computer. It is never shown again or kept
+        in the browser.
+      </p>
+    </form>
+  );
+}
+
+// Header menu to add, replace or remove keys, whatever is already set up.
+export function ApiKeysMenu() {
+  const { settings, removeKey } = useLlm();
+  const [error, setError] = useState(null);
+  if (settings.state !== "ok") return null;
+  const keyed = KEY_PROVIDERS.filter(([name]) => settings.providers.some((p) => p.name === name));
+
+  async function remove(name, label) {
+    if (!window.confirm(`Remove the ${label} API key from .env?`)) return;
+    try {
+      setError(null);
+      await removeKey(name);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <details className="keys-menu">
+      <summary>API keys</summary>
+      <div className="keys-panel">
+        {keyed.length > 0 && (
+          <ul className="keys-set">
+            {keyed.map(([name, label]) => (
+              <li key={name}>
+                <span>{label}: key set</span>
+                <button type="button" className="link-button" onClick={() => remove(name, label)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {error && <p className="error small">{error}</p>}
+        <ApiKeyForm />
+      </div>
+    </details>
+  );
 }
 
 export function AiSetupHint() {
@@ -79,6 +190,7 @@ export function AiSetupHint() {
   return (
     <div className="muted ai-setup">
       <p>No AI model is set up. {setupText(settings.ollama)}</p>
+      <ApiKeyForm />
       <button type="button" className="secondary" onClick={check} disabled={checking}>
         {checking ? "Checking…" : "Check again"}
       </button>

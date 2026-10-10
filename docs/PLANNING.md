@@ -129,7 +129,7 @@ Before this change, summaries, Q&A and the LLM metadata pass worked only after t
 | Option | Privacy | Operating cost | Setup time | Feature quality | Verdict |
 |---|---|---|---|---|---|
 | Local model through Ollama | Papers never leave the machine | None | Install Ollama and pull a 3.3 GB model, a few minutes | Weaker than Claude Haiku or GPT mini, and slow without a GPU | **Chosen** |
-| In-app key entry (a form that keeps the key in backend memory) | Paper text still goes to the provider | The user's own API bill | Still needs a provider account and key | Same as today | Not chosen: it saves editing `.env` but not getting a key |
+| In-app key entry | Paper text still goes to the provider | The user's own API bill | Still needs a provider account and key, but no file editing or restart | Same as today | **Also chosen**, after review: users who have a key should be able to add it in the app |
 | Hosted backend or authenticated proxy | Paper text goes to the provider through a third party | Someone pays for every user's requests, plus hosting | None for the user | Same as today | Not chosen: needs a funded key, authentication, rate limits and an ongoing deployment, which is beyond a project that "does not need to be production-ready" |
 | Demo mode with canned output | Nothing leaves the machine | None | None | No real AI; the output is simulated | Not chosen: it would mislead in the demo video |
 
@@ -141,6 +141,13 @@ How the chosen option works:
 - Ollama has its own timeout, `OLLAMA_TIMEOUT` (900 s), because CPU inference is far slower than the hosted APIs. Its output is capped at 1,024 tokens. Answers and summaries need a few hundred, and in testing a small model occasionally repeated itself until the timeout. With the cap, that run ends in minutes as "cut off" instead.
 - The `.env` keys work exactly as before. When a key is set, its provider stays the default; Ollama is listed last.
 - Ollama has no credential. `GET /api/settings/llm` describes providers by name and model only, so no key ever reaches the browser.
+
+In-app key entry, added after review of the first version:
+
+- **API keys** in the header, and the Summary and Chat empty states, take an Anthropic or OpenAI key. `PUT /api/settings/llm/keys/{provider}` checks it with the provider's free `models.retrieve` call for the configured model, then writes it to the git-ignored `.env` and applies it to the running backend. No restart is needed, and the key is kept after one.
+- The key is saved to `.env` rather than held in backend memory, so it works exactly like a hand-edited key and survives restarts. The file is rewritten atomically with owner-only permissions (600), keeping every other line.
+- Only text shaped like a key (letters, digits, `-` and `_`) is accepted, so a pasted newline can't add or change other settings in `.env`. The key is a `SecretStr` in the request model. It is never returned, logged or kept in browser storage, and errors never echo it.
+- A variable with the same name in the shell still overrides `.env`, as pydantic-settings does for every setting; the README's troubleshooting table says so.
 
 Measured end to end on the development machine (WSL2, 12 CPU threads, no GPU), with no key set and *Attention Is All You Need* uploaded:
 

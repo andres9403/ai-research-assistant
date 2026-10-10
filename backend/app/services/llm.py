@@ -1,6 +1,7 @@
 """The LLM providers behind one small interface: Anthropic, OpenAI and a local Ollama, chosen per request.
 
-Anthropic and OpenAI are available when their API key is set in `.env`. Ollama
+Anthropic and OpenAI are available when their API key is set, in `.env` or in
+the app (see `api_keys`). Ollama
 needs no key: it is available while its server answers at OLLAMA_URL and has
 the model pulled, checked live so pulling a model needs no backend restart.
 Every call asks for JSON that matches a schema (structured outputs on all
@@ -13,6 +14,8 @@ for Ollama; nothing here may reach a real API in tests.
 import json
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Protocol
@@ -69,18 +72,15 @@ class AnthropicProvider:
         self.model = model
         self.client = anthropic.Anthropic(api_key=api_key, timeout=settings.llm_timeout, max_retries=2)
 
-    def complete_json(self, *, system, prompt, schema, schema_name, max_tokens) -> LLMResult:
+    @contextmanager
+    def _errors(self) -> Iterator[None]:
+        """Turn SDK exceptions into LLMErrors with messages for the user."""
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": prompt}],
-                # Low effort: these are reading tasks, and it keeps thinking tokens down.
-                output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
-            )
+            yield
         except anthropic.AuthenticationError as exc:
-            raise LLMError("Anthropic rejected the API key. Check ANTHROPIC_API_KEY in .env.") from exc
+            raise LLMError(
+                "Anthropic rejected the API key. Replace it under API keys, or fix ANTHROPIC_API_KEY in .env."
+            ) from exc
         except anthropic.PermissionDeniedError as exc:
             raise LLMError(f"The Anthropic API key can't use this model ({self.model}).") from exc
         except anthropic.NotFoundError as exc:
@@ -92,6 +92,25 @@ class AnthropicProvider:
             raise LLMError(f"The Anthropic API returned an error (HTTP {exc.status_code}).") from exc
         except anthropic.APIConnectionError as exc:
             raise LLMError("Couldn't reach the Anthropic API. Check your internet connection.") from exc
+
+    def check(self) -> None:
+        """Raise LLMError unless the key works and can use the model. Costs no tokens."""
+        with self._errors():
+            try:
+                self.client.models.retrieve(self.model)
+            except anthropic.AuthenticationError as exc:
+                raise LLMError("Anthropic rejected this API key.") from exc
+
+    def complete_json(self, *, system, prompt, schema, schema_name, max_tokens) -> LLMResult:
+        with self._errors():
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                # Low effort: these are reading tasks, and it keeps thinking tokens down.
+                output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
+            )
 
         if response.stop_reason == "refusal":
             raise LLMError("The model declined to answer this request.")
@@ -112,23 +131,15 @@ class OpenAIProvider:
         self.model = model
         self.client = openai.OpenAI(api_key=api_key, timeout=settings.llm_timeout, max_retries=2)
 
-    def complete_json(self, *, system, prompt, schema, schema_name, max_tokens) -> LLMResult:
-        extra = {}
-        if REASONING_MODEL.match(self.model):
-            extra["reasoning_effort"] = "low"  # reasoning models only; others reject it
+    @contextmanager
+    def _errors(self) -> Iterator[None]:
+        """Turn SDK exceptions into LLMErrors with messages for the user."""
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                max_completion_tokens=max_tokens,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {"name": schema_name, "schema": schema, "strict": True},
-                },
-                **extra,
-            )
+            yield
         except openai.AuthenticationError as exc:
-            raise LLMError("OpenAI rejected the API key. Check OPENAI_API_KEY in .env.") from exc
+            raise LLMError(
+                "OpenAI rejected the API key. Replace it under API keys, or fix OPENAI_API_KEY in .env."
+            ) from exc
         except openai.PermissionDeniedError as exc:
             raise LLMError(f"The OpenAI API key can't use this model ({self.model}).") from exc
         except openai.NotFoundError as exc:
@@ -140,6 +151,30 @@ class OpenAIProvider:
             raise LLMError(f"The OpenAI API returned an error (HTTP {exc.status_code}).") from exc
         except openai.APIConnectionError as exc:
             raise LLMError("Couldn't reach the OpenAI API. Check your internet connection.") from exc
+
+    def check(self) -> None:
+        """Raise LLMError unless the key works and can see the model. Costs no tokens."""
+        with self._errors():
+            try:
+                self.client.models.retrieve(self.model)
+            except openai.AuthenticationError as exc:
+                raise LLMError("OpenAI rejected this API key.") from exc
+
+    def complete_json(self, *, system, prompt, schema, schema_name, max_tokens) -> LLMResult:
+        extra = {}
+        if REASONING_MODEL.match(self.model):
+            extra["reasoning_effort"] = "low"  # reasoning models only; others reject it
+        with self._errors():
+            response = self.client.chat.completions.create(
+                model=self.model,
+                max_completion_tokens=max_tokens,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": schema_name, "schema": schema, "strict": True},
+                },
+                **extra,
+            )
 
         choice = response.choices[0]
         if choice.message.refusal:
@@ -271,16 +306,23 @@ def available(ollama: OllamaStatus | None = None) -> dict[str, LLMProvider]:
     return providers
 
 
+def check_key(name: str, api_key: str) -> None:
+    """Raise LLMError unless `api_key` works for provider `name` and its configured model."""
+    model = getattr(settings, f"{name}_model") or DEFAULT_MODELS[name]
+    cls = {"anthropic": AnthropicProvider, "openai": OpenAIProvider}[name]
+    cls(api_key, model).check()
+
+
 def setup_hint(ollama: OllamaStatus) -> str:
     """What to do to get an LLM, for a user who has none."""
     if ollama.running:
         return (
             f"Ollama is running but doesn't have {ollama.model}. Run: ollama pull {ollama.model} "
-            "(or add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend)."
+            "(or add an Anthropic or OpenAI API key under API keys)."
         )
     return (
         f"Install Ollama from https://ollama.com and run: ollama pull {ollama.model} "
-        "(no key needed), or add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the backend."
+        "(no key needed), or add an Anthropic or OpenAI API key under API keys."
     )
 
 
@@ -306,5 +348,5 @@ def resolve(name: str | None = None) -> LLMProvider:
             raise LLMNotConfigured(f"Ollama doesn't have {ollama.model}. Run: ollama pull {ollama.model}")
         raise LLMNotConfigured(f"Ollama isn't running at {settings.ollama_url or '(OLLAMA_URL is blank)'}.")
     if name not in providers:
-        raise LLMNotConfigured(f"{LABELS[name]} has no API key in .env.")
+        raise LLMNotConfigured(f"{LABELS[name]} has no API key. Add one under API keys.")
     return providers[name]

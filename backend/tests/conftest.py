@@ -26,6 +26,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import config  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -87,6 +88,17 @@ def network(monkeypatch):
     monkeypatch.setattr(http, "make_download_client", mock_client)
     yield fake
     assert not fake.unexpected, f"unexpected HTTP requests: {fake.unexpected}"
+
+
+@pytest.fixture(autouse=True)
+def env_file(monkeypatch, tmp_path):
+    """Keys saved in the app go to a temp `.env`, never the repo's real one, and
+    the key settings they change are restored after each test."""
+    path = tmp_path / ".env"
+    monkeypatch.setattr(config, "ENV_FILE", path)
+    monkeypatch.setattr(settings, "anthropic_api_key", settings.anthropic_api_key)
+    monkeypatch.setattr(settings, "openai_api_key", settings.openai_api_key)
+    return path
 
 
 class FakeLLM:

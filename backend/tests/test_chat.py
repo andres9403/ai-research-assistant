@@ -325,7 +325,7 @@ def test_chat_needs_an_llm(client):
     paper_id = upload(client).json()["id"]
     resp = ask(client, paper_id, "What is routed?")
     assert resp.status_code == 503
-    assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+    assert "API key under API keys" in resp.json()["detail"]
 
 
 def test_chat_needs_the_full_text(client, fake_llm):

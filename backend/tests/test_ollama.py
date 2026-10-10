@@ -141,7 +141,7 @@ def test_ollama_needs_the_model_pulled(client, network, monkeypatch, no_keys):
 def test_stopped_ollama_explains_both_setup_paths(client, no_keys):
     data = client.get("/api/settings/llm").json()
     assert data == {"default": None, "providers": [], "ollama": {"model": "gemma3:4b", "running": False}}
-    with pytest.raises(llm.LLMNotConfigured, match="Install Ollama.*ANTHROPIC_API_KEY"):
+    with pytest.raises(llm.LLMNotConfigured, match="Install Ollama.*API key under API keys"):
         llm.resolve()
 
 

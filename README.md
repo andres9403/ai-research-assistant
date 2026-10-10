@@ -20,7 +20,7 @@ The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLi
 
 - **Python 3.11 or newer.** Tested on 3.11 and 3.13.
 - **Node.js 18 or newer.** Tested on 18 and 24.
-- **An AI model** for summaries and Q&A: either [Ollama](https://ollama.com) running on your machine (free, no key; see [Local model](#local-model-no-api-key)), or an Anthropic or OpenAI API key. Without one, search, the library and PDF upload still work, and the AI features are switched off.
+- **An AI model** for summaries and Q&A: an Anthropic or OpenAI API key, which you can paste into the app, or [Ollama](https://ollama.com) running on your machine (free, no key; see [Local model](#local-model-no-api-key)). Without one, search, the library and PDF upload still work, and the AI features are switched off.
 - Internet access for paper search, PDF downloads, the LLM, and a one-time download of the embedding model (about 65 MB).
 
 ## Quick start
@@ -34,7 +34,17 @@ git clone https://github.com/andres9403/ai-research-assistant.git
 cd ai-research-assistant
 ```
 
-**2. Choose an AI model.** Do one of the following, or both.
+**2. Choose an AI model.** Pick one of these. You can also add or change it later, while the app is running.
+
+- **An API key, pasted into the app (simplest).** Nothing to do yet. Once the app is open (step 5), click **API keys** in the header, choose Anthropic Claude or OpenAI, paste your key and click **Save key**. The app checks the key with the provider and saves it to `.env` for you, so it is kept after a restart. There is no file to edit and nothing to restart.
+
+- **An API key in `.env`.** If you prefer to edit the file yourself:
+
+  ```bash
+  cp .env.example .env
+  ```
+
+  Open `.env` and set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, or both. If you set only the OpenAI key, also set `LLM_PROVIDER=openai`. You can leave every other setting as it is.
 
 - **No API key: a local model.** Install [Ollama](https://ollama.com/download), then download the model, about 3.3 GB:
 
@@ -43,14 +53,6 @@ cd ai-research-assistant
   ```
 
   There is nothing to put in `.env`. The app finds Ollama by itself while it is running. It is slower than the hosted models; see [Local model](#local-model-no-api-key).
-
-- **An API key.** Copy the settings file and add your key:
-
-  ```bash
-  cp .env.example .env
-  ```
-
-  Open `.env` and set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, or both. If you set only the OpenAI key, also set `LLM_PROVIDER=openai`. You can leave every other setting as it is.
 
 **3. Start the backend** in its own terminal.
 
@@ -71,7 +73,7 @@ npm install
 npm run dev
 ```
 
-**5. Open <http://localhost:5173>.** The header shows an **AI model** dropdown when a model is available, or **AI off: no model set up** when none is. In that case the Summary and Chat tabs say what to do next, and their **Check again** button finds Ollama as soon as the model is pulled.
+**5. Open <http://localhost:5173>.** The header shows an **AI model** dropdown when a model is available, or **AI off: no model set up** when none is. In that case, paste a key under **API keys** in the header, or in the Summary or Chat tab of any paper. Their **Check again** button finds Ollama as soon as its model is pulled.
 
 To stop the app, press Ctrl+C in both terminals. Your library is kept in `data/` and is there again the next time you start it.
 
@@ -199,7 +201,7 @@ All settings are read from `.env` in the repo root. None are required: with Olla
 | `DATA_DIR` | `data/` | Where the database, PDFs and embedding model are stored |
 | `BACKEND_URL` | `http://localhost:8000` | Where the frontend dev server sends `/api` requests. Change it if the backend runs on another port |
 
-Restart the backend after you change `.env`. Ollama needs no restart: the app checks for it on every AI request.
+Restart the backend after you edit `.env` by hand. Keys saved under **API keys** in the app are written to `.env` and take effect at once, and Ollama needs no restart either: the app checks for it on every AI request. A variable set in your shell, such as an exported `ANTHROPIC_API_KEY`, overrides `.env`.
 
 ## API
 
@@ -220,6 +222,7 @@ Every route is under `/api`. While the backend is running, interactive documenta
 | `GET`, `POST /api/papers/{id}/summary` | Read the cached summary, or generate one (`?refresh=true` regenerates it) |
 | `GET`, `POST`, `DELETE /api/papers/{id}/chat` | Read the conversation, ask a question, or clear the conversation |
 | `GET /api/settings/llm` | The LLM providers that can answer, the default, and whether Ollama is running. API keys are never returned |
+| `PUT`, `DELETE /api/settings/llm/keys/{provider}` | Check an Anthropic or OpenAI key and save it to `.env` (body `{"key": "..."}`), or remove it. Both answer with the LLM settings, never the key |
 
 ## Project layout
 
@@ -259,7 +262,9 @@ To check that the frontend compiles, run `npm run build` from `frontend/`.
 | Symptom | Fix |
 |---|---|
 | The header says **backend unreachable** | Start the backend (step 3) on port 8000, or set `BACKEND_URL` if it runs on a different port. Then reload the page |
-| The header says **AI off: no model set up** | Start Ollama and run `ollama pull gemma3:4b`, then click **Check again** in the Summary or Chat tab. Or add a key to `.env` and restart the backend |
+| The header says **AI off: no model set up** | Paste a key under **API keys** in the header. Or start Ollama and run `ollama pull gemma3:4b`, then click **Check again** in the Summary or Chat tab |
+| **Save key** says the key was rejected | Copy the whole key again from the provider's console. The key must also be allowed to use the configured model (`ANTHROPIC_MODEL` or `OPENAI_MODEL`) |
+| A key saved in the app is gone after a restart | A variable with the same name in your shell overrides `.env`. Run `unset ANTHROPIC_API_KEY OPENAI_API_KEY` before starting the backend |
 | A summary or upload takes minutes with Ollama | Local models are slow on a computer without a GPU; see [Local model](#local-model-no-api-key). Use a smaller model, or an API key |
 | *Ollama took longer than 900 seconds* | Raise `OLLAMA_TIMEOUT` in `.env`, or use a smaller model |
 | Search says *Semantic Scholar unavailable (HTTP 429)* | Semantic Scholar is rate-limiting keyless requests. The results come from arXiv instead. Add `SEMANTIC_SCHOLAR_API_KEY` to avoid this |

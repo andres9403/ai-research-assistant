@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 class PaperBase(BaseModel):
@@ -84,6 +84,13 @@ class OllamaOut(BaseModel):
 
     model: str
     running: bool
+
+
+class ApiKeyIn(BaseModel):
+    """A key typed into the app. SecretStr keeps it out of reprs and logs; its format
+    is checked in services/api_keys.py so that errors never echo it back."""
+
+    key: SecretStr
 
 
 class LLMSettingsOut(BaseModel):

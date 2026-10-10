@@ -130,7 +130,7 @@ def test_summary_needs_an_llm(client):
     paper_id = upload(client).json()["id"]
     resp = client.post(f"/api/papers/{paper_id}/summary")
     assert resp.status_code == 503
-    assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+    assert "API key under API keys" in resp.json()["detail"]
 
 
 def test_unconfigured_provider_is_refused(client, fake_llm):
