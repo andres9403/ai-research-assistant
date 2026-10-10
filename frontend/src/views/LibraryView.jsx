@@ -127,7 +127,7 @@ export default function LibraryView() {
       {state.status === "done" && (
         <p className={current ? "muted" : "muted invisible"}>
           {papers.length} paper{papers.length === 1 ? "" : "s"}
-          {filtered ? " match your filters" : " in your library"}
+          {filtered ? ` match${papers.length === 1 ? "es" : ""} your filters` : " in your library"}
         </p>
       )}
       {current && !papers.length && !filtered && (
