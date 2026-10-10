@@ -36,7 +36,7 @@ def test_s2_gets_the_filters_it_supports():
     assert request.params["year"] == "2017-2019"
     assert request.params["venue"] == "NeurIPS"
     assert request.params["publicationTypes"] == "Conference"
-    assert request.params["openAccessPdf"] == ""
+    assert request.flags == ["openAccessPdf"] and "openAccessPdf" not in request.params
     assert request.params["limit"] == 20  # nothing applied locally
     assert request.notes == [] and request.unapplied_filters == []
 
@@ -76,7 +76,7 @@ def test_arxiv_reports_filters_it_cannot_apply():
     assert request.unapplied_filters == ["sort", "venue", "publication_type"]
     assert request.notes == [
         "arXiv has no citation counts, so results are in relevance order.",
-        "arXiv can't filter by venue or paper type, so that filter was not applied.",
+        "arXiv can't filter by venue or paper type, so those filters were not applied.",
     ]
 
 
@@ -157,7 +157,8 @@ def test_search_endpoint_forwards_filters(client, use_service):
     assert [r["title"] for r in body["results"]] == ["Attention is All you Need"]
     assert body["notes"] and body["unapplied_filters"] == []
     params = calls[0].url.params
-    assert params["year"] == "2017-2017" and "openAccessPdf" in params and params["limit"] == "100"
+    assert params["year"] == "2017-2017" and params["limit"] == "100"
+    assert calls[0].url.query.decode().endswith("&openAccessPdf")  # a bare flag, as the API requires
 
 
 def test_search_endpoint_without_filters_is_keyword_only(client, use_service):

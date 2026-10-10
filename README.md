@@ -8,7 +8,7 @@ The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLi
 
 ## Features
 
-- **Search** papers by keyword or topic. The app queries Semantic Scholar and falls back to arXiv when Semantic Scholar is rate-limited or down. Each result shows the title, authors, year, abstract and a link.
+- **Search** papers by keyword or topic. The app queries Semantic Scholar and falls back to arXiv when Semantic Scholar is rate-limited or down. Each result shows the title, authors, year, abstract and a link. **Filters** narrow a search by author, year range, venue, paper type and open access, and sort it by relevance, newest first or most cited. When a source can't apply a filter, the results say so.
 - **Save** results to a local library that survives restarts and page refreshes. Duplicates are detected by DOI or Semantic Scholar ID, then by normalised title. You can filter the library by text, source and year.
 - **Full text, automatically.** When a saved paper has an open-access PDF, the app downloads it in the background, extracts the text, splits it into sections and chunks, and embeds the chunks locally.
 - **Upload PDFs.** The title, authors, year and abstract are read from the PDF itself and checked against Semantic Scholar and arXiv, so uploads look like search results. Every field stays editable. You can also attach a PDF to a saved paper that has no open-access copy.
@@ -80,7 +80,7 @@ Run the same steps in PowerShell, with these changes: use `python` instead of `p
 
 [docs/TUTORIAL.md](docs/TUTORIAL.md) walks through every feature step by step, and doubles as the script for the demo video. In short:
 
-1. **Search.** Type a topic, such as `retrieval augmented generation`, and click **Save** on the papers you want.
+1. **Search.** Type a topic, such as `retrieval augmented generation`, and click **Save** on the papers you want. To narrow it, click **Filters**: for example, author `Lewis`, from year `2020` to `2020`, sorted by **Most cited**. **Clear filters** returns to a plain keyword search.
 2. **Library.** Saved papers show their PDF status: **Downloading PDF…**, then **Processing PDF…**, then **Full text ✓**. Click a title to open the paper. Use **Upload PDF** to add a paper from your own disk.
 3. **Paper page → Summary.** Click **Generate summary**.
 4. **Paper page → Chat.** Click one of the example questions or type your own. Click a citation number to see the passage it refers to.
@@ -173,7 +173,7 @@ Every route is under `/api`. While the backend is running, interactive documenta
 | Method and path | Purpose |
 |---|---|
 | `GET /api/health` | Backend and database check |
-| `GET /api/search?q=&limit=` | Search Semantic Scholar, with arXiv as fallback |
+| `GET /api/search?q=&limit=&author=&year_from=&year_to=&venue=&publication_type=&open_access=&sort=` | Search Semantic Scholar, with arXiv as fallback. Filters are optional; `notes` and `unapplied_filters` report any a source could not apply |
 | `GET /api/papers?q=&source=&year_from=&year_to=` | List and filter the library |
 | `POST /api/papers` | Save a search result. Answers 409 if it is a duplicate |
 | `GET`, `PATCH`, `DELETE /api/papers/{id}` | Read, edit or delete a paper |

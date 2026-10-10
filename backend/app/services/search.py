@@ -53,6 +53,7 @@ class ProviderRequest:
     """What one provider is asked for, and what it could not be asked."""
 
     params: dict
+    flags: list[str] = field(default_factory=list)  # valueless query parameters
     unapplied_filters: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
@@ -93,7 +94,11 @@ class SearchService:
     ) -> list[SearchResult]:
         filters = filters or SearchFilters()
         headers = {"x-api-key": self.s2_api_key} if self.s2_api_key else {}
-        resp = self.client.get(S2_SEARCH_URL, params=s2_request(query, limit, filters).params, headers=headers)
+        request = s2_request(query, limit, filters)
+        url = httpx.URL(S2_SEARCH_URL, params=request.params)
+        if request.flags:
+            url = url.copy_with(query=url.query + "".join(f"&{flag}" for flag in request.flags).encode())
+        resp = self.client.get(url, headers=headers)
         resp.raise_for_status()
         results = [p for item in resp.json().get("data") or [] if (p := _parse_s2(item))]
         if filters.author:
@@ -125,8 +130,8 @@ def s2_request(query: str, limit: int, filters: SearchFilters) -> ProviderReques
         params["venue"] = filters.venue
     if filters.publication_type:
         params["publicationTypes"] = filters.publication_type
-    if filters.open_access:
-        params["openAccessPdf"] = ""  # a flag; any value means "has an open-access PDF"
+    # Semantic Scholar's openAccessPdf filter takes no value.
+    flags = ["openAccessPdf"] if filters.open_access else []
 
     local = []
     if filters.author:
@@ -140,7 +145,7 @@ def s2_request(query: str, limit: int, filters: SearchFilters) -> ProviderReques
             f"Semantic Scholar can't do this itself, so {' and '.join(local)} "
             f"{'were' if len(local) > 1 else 'was'} applied to its {params['limit']} most relevant matches."
         )
-    return ProviderRequest(params, [], notes)
+    return ProviderRequest(params, flags=flags, notes=notes)
 
 
 def arxiv_request(query: str, limit: int, filters: SearchFilters) -> ProviderRequest:
@@ -173,8 +178,11 @@ def arxiv_request(query: str, limit: int, filters: SearchFilters) -> ProviderReq
     if skipped:
         unapplied += skipped
         labels = " or ".join(missing[key] for key in skipped)
-        notes.append(f"arXiv can't filter by {labels}, so that filter was not applied.")
-    return ProviderRequest(params, unapplied, notes)
+        notes.append(
+            f"arXiv can't filter by {labels}, so {'those filters were' if len(skipped) > 1 else 'that filter was'} "
+            "not applied."
+        )
+    return ProviderRequest(params, unapplied_filters=unapplied, notes=notes)
 
 
 def matches_author(authors: list[str], wanted: str) -> bool:
