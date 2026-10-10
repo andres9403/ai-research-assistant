@@ -1,14 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import PaperCard from "../components/PaperCard.jsx";
 
 const PROVIDER_LABELS = { s2: "Semantic Scholar", arxiv: "arXiv" };
 
-export default function SearchView() {
+// `active` is false while another tab is shown; this view stays mounted so the
+// results survive, and are rechecked against the library on the way back.
+export default function SearchView({ active }) {
   const [query, setQuery] = useState("");
   const [state, setState] = useState({ status: "idle" });
   // Per-result save state, keyed by index: "saving" | { id } | { error }
   const [saves, setSaves] = useState({});
+
+  // Papers deleted from the library meanwhile lose their "In library" mark.
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    api
+      .listPapers()
+      .then((papers) => {
+        if (cancelled) return;
+        const ids = new Set(papers.map((p) => p.id));
+        const forget = (r) => (r.saved_id && !ids.has(r.saved_id) ? { ...r, saved_id: null } : r);
+        setState((s) => (s.status === "done" ? { ...s, results: s.results.map(forget) } : s));
+        setSaves((s) => Object.fromEntries(Object.entries(s).filter(([, v]) => !v?.id || ids.has(v.id))));
+      })
+      .catch(() => {}); // the marks just stay as they were
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
 
   async function runSearch(event) {
     event.preventDefault();
@@ -37,8 +58,13 @@ export default function SearchView() {
 
   function saveButton(index, paper) {
     const status = saves[index];
-    if (paper.saved_id || status?.id) {
-      return <span className="saved">✓ In library</span>;
+    const savedId = paper.saved_id || status?.id;
+    if (savedId) {
+      return (
+        <a className="saved" href={`#/paper/${savedId}`} title="Open it in your library">
+          ✓ In library
+        </a>
+      );
     }
     return (
       <>

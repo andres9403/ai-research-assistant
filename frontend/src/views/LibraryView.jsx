@@ -27,7 +27,7 @@ export default function LibraryView() {
     const timer = setTimeout(() => {
       api
         .listPapers(filters)
-        .then((papers) => !cancelled && setState({ status: "done", papers }))
+        .then((papers) => !cancelled && setState({ status: "done", papers, filters }))
         .catch((err) => !cancelled && setState((s) => ({ ...s, status: "error", error: err.message })));
     }, 250);
     return () => {
@@ -62,6 +62,8 @@ export default function LibraryView() {
 
   const filtered = Object.values(filters).some((v) => v !== "");
   const { papers } = state;
+  // While typing, the list still shows the previous filters' papers.
+  const current = state.status === "done" && state.filters === filters;
 
   return (
     <section>
@@ -123,12 +125,12 @@ export default function LibraryView() {
 
       {state.status === "error" && <p className="error">Could not load library: {state.error}</p>}
       {state.status === "done" && (
-        <p className="muted">
+        <p className={current ? "muted" : "muted invisible"}>
           {papers.length} paper{papers.length === 1 ? "" : "s"}
-          {filtered ? " match your filters" : " in your library"}
+          {filtered ? ` match${papers.length === 1 ? "es" : ""} your filters` : " in your library"}
         </p>
       )}
-      {state.status === "done" && !papers.length && !filtered && (
+      {current && !papers.length && !filtered && (
         <p className="empty">
           Your library is empty. <a href="#/search">Search for papers</a> to save them here, or
           upload a PDF.

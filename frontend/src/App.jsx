@@ -49,20 +49,25 @@ export default function App() {
             ))}
           </nav>
           <ProviderSelect />
-          <span className={`badge badge-${backend.state}`}>
-            {backend.state === "ok" && "backend OK"}
-            {backend.state === "checking" && "checking backend…"}
-            {backend.state === "down" && `backend unreachable: ${backend.error}`}
-          </span>
+          {backend.state === "checking" && <span className="badge badge-checking">checking backend…</span>}
+          {backend.state === "down" && (
+            <span
+              className="badge badge-down"
+              title="Start the backend on port 8000 (see the README), then reload this page."
+            >
+              backend unreachable: {backend.error}
+            </span>
+          )}
         </header>
         <main className="main">
-          {route.view === "paper" ? (
+          {/* Search stays mounted, so its results survive a visit to the library. */}
+          <div hidden={route.view !== "search"}>
+            <SearchView active={route.view === "search"} />
+          </div>
+          {route.view === "paper" && (
             <PaperDetailView key={route.paperId} id={route.paperId} uploaded={route.uploaded} />
-          ) : route.view === "library" ? (
-            <LibraryView />
-          ) : (
-            <SearchView />
           )}
+          {route.view === "library" && <LibraryView />}
         </main>
       </div>
     </LlmProvider>

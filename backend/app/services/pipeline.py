@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -22,7 +22,7 @@ from app.services import embeddings, http, retrieval
 from app.services.library import DuplicateIndex, normalize_doi
 from app.services.llm import LLMError, LLMProvider
 from app.services.metadata import ExtractedMetadata, extract_metadata, llm_metadata, lookup
-from app.services.pdf import MAX_PDF_BYTES, ExtractedPdf, PdfError, extract
+from app.services.pdf import CHARS_PER_TOKEN, MAX_PDF_BYTES, ExtractedPdf, PdfError, extract
 
 log = logging.getLogger(__name__)
 
@@ -245,6 +245,13 @@ def fetch_pdf(client: httpx.Client, url: str) -> bytes:
     if b"%PDF-" not in data[:1024]:
         raise DownloadError("the link leads to a web page, not a PDF file")
     return bytes(data)
+
+
+def refresh_token_estimates(session: Session) -> None:
+    """Re-estimate chunk sizes stored under an older estimate, so budgets apply to them too."""
+    estimate = (func.length(Chunk.text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN  # estimate_tokens in SQL
+    session.execute(update(Chunk).where(Chunk.n_tokens != estimate).values(n_tokens=estimate))
+    session.commit()
 
 
 def recover_interrupted(session: Session) -> None:

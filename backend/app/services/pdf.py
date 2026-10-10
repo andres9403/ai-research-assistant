@@ -102,8 +102,13 @@ class ExtractedPdf:
         return bool(self.lines)
 
 
+# Claude's tokenizer averages about 2.8 characters per token on paper text and
+# OpenAI's about 4, so 3 keeps every token budget close to a real ceiling for both.
+CHARS_PER_TOKEN = 3
+
+
 def estimate_tokens(text: str) -> int:
-    return math.ceil(len(text) / 4)
+    return math.ceil(len(text) / CHARS_PER_TOKEN)
 
 
 def open_pdf(data: bytes) -> pymupdf.Document:

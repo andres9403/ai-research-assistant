@@ -176,7 +176,7 @@ def _year(arxiv_id: str | None, page_text: str, pdf_metadata: dict) -> int | Non
     return int(created.group(1)) if created else None
 
 
-FIRST_PAGE_MAX_CHARS = 6000  # about 1.5k tokens; a first page is usually well under
+FIRST_PAGE_MAX_CHARS = 6000  # about 2k tokens; a first page is usually well under
 
 LLM_SYSTEM = """You extract bibliographic metadata from the first page of a research paper.
 
