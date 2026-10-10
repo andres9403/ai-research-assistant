@@ -54,6 +54,14 @@ export const api = {
   getSummary: (id) => request(`/papers/${id}/summary`),
   createSummary: (id, { provider, refresh = false } = {}) =>
     request(`/papers/${id}/summary${query({ provider, refresh: refresh || null })}`, { method: "POST" }),
+  getChat: (id) => request(`/papers/${id}/chat`),
+  ask: (id, question, provider) =>
+    request(`/papers/${id}/chat${query({ provider })}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    }),
+  clearChat: (id) => request(`/papers/${id}/chat`, { method: "DELETE" }),
 };
 
 function pdfForm(file, fields = {}) {
