@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class PaperBase(BaseModel):
@@ -23,11 +23,56 @@ class PaperCreate(PaperBase):
 
 class SearchResult(PaperCreate):
     saved_id: int | None = None  # library id when this paper is already saved
+    venue: str | None = None
+    citation_count: int | None = None  # Semantic Scholar only
+
+
+# Semantic Scholar's publicationTypes values; arXiv has no paper types.
+PublicationType = Literal[
+    "JournalArticle", "Conference", "Review", "Book", "BookSection", "Dataset",
+    "MetaAnalysis", "Study", "CaseReport", "ClinicalTrial", "Editorial",
+    "LettersAndComments", "News",
+]
+SearchSort = Literal["relevance", "newest", "citations"]
+
+
+class SearchFilters(BaseModel):
+    """Optional narrowing for an external search. The defaults search by keyword only."""
+
+    author: str | None = Field(None, max_length=100)
+    year_from: int | None = Field(None, ge=1900, le=2100)
+    year_to: int | None = Field(None, ge=1900, le=2100)
+    venue: str | None = Field(None, max_length=200)
+    publication_type: PublicationType | None = None
+    open_access: bool = False
+    sort: SearchSort = "relevance"
+
+    @field_validator("author", "venue")
+    @classmethod
+    def blank_is_none(cls, value: str | None) -> str | None:
+        return " ".join(value.split()) or None if value else None
+
+    @field_validator("venue")
+    @classmethod
+    def single_venue(cls, value: str | None) -> str | None:
+        # Semantic Scholar reads commas as a list of venues.
+        if value and "," in value:
+            raise ValueError("Venue must be a single name, without commas")
+        return value
+
+    @model_validator(mode="after")
+    def ordered_years(self) -> "SearchFilters":
+        if self.year_from and self.year_to and self.year_from > self.year_to:
+            raise ValueError("year_from must not be later than year_to")
+        return self
 
 
 class SearchResponse(BaseModel):
     provider: Literal["s2", "arxiv"]
     fallback_reason: str | None = None  # why Semantic Scholar wasn't used
+    # Filters the answering provider could not apply, so results ignore them.
+    unapplied_filters: list[str] = []
+    notes: list[str] = []  # how the filters and ordering were applied, for the user
     results: list[SearchResult]
 
 
