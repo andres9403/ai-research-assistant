@@ -59,6 +59,15 @@ export const api = {
       body: JSON.stringify({ key }),
     }),
   removeApiKey: (provider) => request(`/settings/llm/keys/${provider}`, { method: "DELETE" }),
+  // Whether a Semantic Scholar key is set; like the LLM keys, it is never sent back.
+  searchSettings: () => request("/settings/search"),
+  setSearchKey: (provider, key) =>
+    request(`/settings/search/keys/${provider}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    }),
+  removeSearchKey: (provider) => request(`/settings/search/keys/${provider}`, { method: "DELETE" }),
   getSummary: (id) => request(`/papers/${id}/summary`),
   createSummary: (id, { provider, refresh = false } = {}) =>
     request(`/papers/${id}/summary${query({ provider, refresh: refresh || null })}`, { method: "POST" }),

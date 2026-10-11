@@ -56,5 +56,6 @@ def search(
         fallback_reason=outcome.fallback_reason,
         unapplied_filters=outcome.unapplied_filters,
         notes=outcome.notes,
+        suggest_s2_key=outcome.suggest_s2_key,
         results=[paper.model_copy(update={"saved_id": index.match(paper)}) for paper in outcome.results],
     )

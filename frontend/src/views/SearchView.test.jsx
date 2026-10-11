@@ -5,6 +5,8 @@ import SearchView from "./SearchView.jsx";
 import { api } from "../api.js";
 
 vi.mock("../api.js", () => ({ api: { search: vi.fn(), listPapers: vi.fn(), savePaper: vi.fn() } }));
+const openKeys = vi.fn();
+vi.mock("../llm.jsx", () => ({ useLlm: () => ({ openKeys }) }));
 
 const RESPONSE = {
   provider: "arxiv",
@@ -96,5 +98,27 @@ describe("SearchView filters", () => {
     expect(screen.getByRole("button", { name: "Search" }).disabled).toBe(true);
     await user.type(screen.getByRole("searchbox", { name: "Search papers" }), "{Enter}");
     expect(api.search).not.toHaveBeenCalled();
+  });
+});
+
+describe("SearchView Semantic Scholar key hint", () => {
+  async function search(user) {
+    render(<SearchView active />);
+    await user.type(screen.getByRole("searchbox", { name: "Search papers" }), "attention{Enter}");
+    await screen.findByText("A paper");
+  }
+
+  it("offers the API keys menu when a keyless search was rate-limited", async () => {
+    api.search.mockResolvedValue({ ...RESPONSE, suggest_s2_key: true });
+    const user = userEvent.setup();
+    await search(user);
+    await user.click(screen.getByRole("button", { name: "Add a Semantic Scholar API key" }));
+    expect(openKeys).toHaveBeenCalledWith("semantic_scholar");
+  });
+
+  it("stays quiet when a key would not help", async () => {
+    const user = userEvent.setup();
+    await search(user);
+    expect(screen.queryByRole("button", { name: "Add a Semantic Scholar API key" })).toBeNull();
   });
 });

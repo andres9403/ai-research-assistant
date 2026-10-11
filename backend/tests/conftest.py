@@ -98,6 +98,7 @@ def env_file(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "ENV_FILE", path)
     monkeypatch.setattr(settings, "anthropic_api_key", settings.anthropic_api_key)
     monkeypatch.setattr(settings, "openai_api_key", settings.openai_api_key)
+    monkeypatch.setattr(settings, "semantic_scholar_api_key", settings.semantic_scholar_api_key)
     return path
 
 
