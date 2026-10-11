@@ -6,6 +6,8 @@ Search research papers, save them to a local library, upload your own PDFs, and 
 
 The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLite. The AI runs on Anthropic Claude, OpenAI, or a free local model through [Ollama](https://ollama.com), which needs no account or API key. You can switch between them in the app.
 
+**[Watch the demo video](https://drive.google.com/file/d/1krvOJTwsftBGI6Zy9ZR3M-qsforExJSg/view?usp=drive_link)** (Google Drive).
+
 ## For reviewers
 
 **Start it with one command.** You need only Python 3.11 or newer and Node.js 18 or newer.
@@ -28,7 +30,7 @@ The first run takes a few minutes: it creates a virtual environment, installs th
 | LLM | Open a paper that shows **Full text ✓**. On the **Summary** tab, click **Generate summary**. On the **Chat** tab, ask a question; the answer cites numbered passages you can click | Yes: an Anthropic or OpenAI key pasted under **API keys** in the header, or [Ollama](#local-model-no-api-key), which is free and needs no key |
 | Tests | The CI badge above shows the result of the backend tests (pytest) and the frontend tests and build, which run on every push. To run them yourself, see [Running the tests](#running-the-tests) | No |
 
-Without a key, the header shows **AI off: no model set up** and everything else works. [docs/TUTORIAL.md](docs/TUTORIAL.md) walks through the AI features step by step, and the screenshots under [Using the app](#using-the-app) show their results. A link to the demo video will be added here.
+Without a key, the header shows **AI off: no model set up** and everything else works. [docs/TUTORIAL.md](docs/TUTORIAL.md) walks through the AI features step by step, and the screenshots under [Using the app](#using-the-app) show their results. The [demo video](https://drive.google.com/file/d/1krvOJTwsftBGI6Zy9ZR3M-qsforExJSg/view?usp=drive_link) shows them in use.
 
 ![Paper detail page with a cited answer](docs/images/chat.png)
 
@@ -116,7 +118,7 @@ On Windows, run the same steps in PowerShell with `python` instead of `python3` 
 
 ## Using the app
 
-[docs/TUTORIAL.md](docs/TUTORIAL.md) walks through every feature step by step, and doubles as the script for the demo video. In short:
+[docs/TUTORIAL.md](docs/TUTORIAL.md) walks through every feature step by step, and doubles as the script for the [demo video](https://drive.google.com/file/d/1krvOJTwsftBGI6Zy9ZR3M-qsforExJSg/view?usp=drive_link). In short:
 
 1. **Search.** Type a topic, such as `retrieval augmented generation`, and click **Save** on the papers you want. To narrow it, click **Filters**: for example, author `Lewis`, from year `2020` to `2020`, sorted by **Most cited**. **Clear filters** returns to a plain keyword search.
 2. **Library.** Saved papers show their PDF status: **Downloading PDF…**, then **Processing PDF…**, then **Full text ✓**. Click a title to open the paper. Use **Upload PDF** to add a paper from your own disk.

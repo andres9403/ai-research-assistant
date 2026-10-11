@@ -1,6 +1,6 @@
 # Tutorial and demo script
 
-This walkthrough covers every feature of the AI Research Assistant, in the order a new user would meet them. It is also the script for the demo video: each scene lists what to **do** on screen and what to **say**, and the whole video runs about seven minutes.
+This walkthrough covers every feature of the AI Research Assistant, in the order a new user would meet them. It is also the script for the [demo video](https://drive.google.com/file/d/1krvOJTwsftBGI6Zy9ZR3M-qsforExJSg/view?usp=drive_link): each scene lists what to **do** on screen and what to **say**, and the whole video runs about seven minutes.
 
 The demo uses two papers:
 
