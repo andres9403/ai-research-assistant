@@ -13,16 +13,18 @@ fail() {
   exit 1
 }
 
-# Python 3.11+. macOS's default python3 can be 3.9, so try newer names first.
+# Python 3.11+ that can create a venv. macOS's default python3 can be 3.9, so try
+# newer names first. Skip Pythons bundled with other tools (e.g. Gurobi) or
+# Debian's without python3-venv, which lack the venv or ensurepip module.
 PYTHON=""
 for candidate in python3.13 python3.12 python3.11 python3 python; do
   if command -v "$candidate" >/dev/null 2>&1 &&
-    "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
+    "$candidate" -c 'import sys, venv, ensurepip; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
     PYTHON="$candidate"
     break
   fi
 done
-[ -n "$PYTHON" ] || fail "Python 3.11 or newer is required. Install it from https://www.python.org/downloads/ and run this again."
+[ -n "$PYTHON" ] || fail "Python 3.11 or newer with the venv module is required. Install it from https://www.python.org/downloads/ (on Debian/Ubuntu also: sudo apt install python3-venv) and run this again."
 
 command -v node >/dev/null 2>&1 || fail "Node.js 18 or newer is required. Install it from https://nodejs.org/ and run this again."
 node -e 'process.exit(Number(process.versions.node.split(".")[0]) < 18 ? 1 : 0)' ||
