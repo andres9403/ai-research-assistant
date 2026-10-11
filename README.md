@@ -1,6 +1,6 @@
 # AI Research Assistant
 
-Search research papers, save them to a local library, upload your own PDFs, and ask an LLM to summarize a paper or answer questions about it. Summaries and answers are drawn from the paper's **full text**, not just its abstract, and every answer cites the passages it used.
+Search research papers, save them to a local library, upload your own PDFs, and ask an LLM to summarize a paper or answer questions about it. Summaries and answers are drawn from the paper's **full text**, not just its abstract, and every answer cites the passages it used. When a question needs more than the paper says, such as a term it uses but doesn't define, the answer adds background from the model's general knowledge, labelled as not from the paper.
 
 The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLite. The AI runs on Anthropic Claude, OpenAI, or a free local model through [Ollama](https://ollama.com), which needs no account or API key. You can switch between them in the app.
 

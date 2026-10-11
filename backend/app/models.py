@@ -96,6 +96,8 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     # [{n, chunk_id, section, page_start, page_end, text}]; a snapshot, so it outlives the chunk
     citations: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    # general knowledge the model added, shown apart from the answer as not from the paper
+    background: Mapped[str | None] = mapped_column(Text)
     provider: Mapped[str | None] = mapped_column(String(16))
     model: Mapped[str | None] = mapped_column(String(64))
     input_tokens: Mapped[int | None] = mapped_column(Integer)
