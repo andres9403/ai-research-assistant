@@ -19,7 +19,7 @@ The demo uses two papers:
 
    To go back to your own library after recording, stop the backend and swap the folders again.
 3. Download the BERT PDF from <https://arxiv.org/pdf/1810.04805> and save it somewhere easy to find, such as the desktop, as `bert.pdf`.
-4. Open <http://localhost:5173> in a browser window of about 1200 × 800 pixels, and zoom in to 110–125% so text is readable in the video.
+4. Open <http://localhost:8000> (or <http://localhost:5173> with the README's development setup) in a browser window of about 1200 × 800 pixels, and zoom in to 110–125% so text is readable in the video.
 5. Make sure the header shows the **AI model** dropdown. If it says **AI off: no model set up**, click **API keys** in the header and paste an Anthropic or OpenAI key, or start Ollama and pull its model (then click **Check again** in the Summary tab).
 
 ## Scene 1 — Introduction (30 s)
