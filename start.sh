@@ -2,11 +2,12 @@
 # Set up and start the whole app at http://localhost:8000 from one terminal.
 # The first run creates backend/.venv, installs the dependencies and builds the
 # frontend; later runs reuse them and reinstall only what changed.
-# Usage: ./start.sh            (PORT=8001 ./start.sh to use another port)
+# Port 8000 is used if it is free, otherwise the next free one up to 8020; the
+# script prints the link to open.
+# Usage: ./start.sh            (PORT=8001 ./start.sh to use that port only)
 set -euo pipefail
 
 cd "$(dirname "$0")"
-PORT="${PORT:-8000}"
 
 fail() {
   echo "start.sh: $*" >&2
@@ -55,6 +56,46 @@ if [ ! -d frontend/node_modules ] || [ frontend/package-lock.json -nt frontend/n
 fi
 echo "Building the frontend…"
 (cd frontend && npm run build --silent)
+
+# Print the candidate ports that nothing listens on here, in order. SO_REUSEADDR
+# matches uvicorn, so a port left in TIME_WAIT by the last run still counts as free.
+free_here() {
+  "$PYTHON" - "$@" <<'EOF'
+import socket, sys
+for port in sys.argv[1:]:
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("127.0.0.1", int(port)))
+        except OSError:
+            continue
+    print(port)
+EOF
+}
+
+# Under WSL the browser runs on Windows, which can hold or reserve a port that is
+# free inside WSL (port 8000 is sometimes reserved for HTTP.sys). Keep only the
+# ports Windows can bind too; if Windows can't be asked, keep them all.
+free_on_windows() {
+  if grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then
+    local ports
+    ports=$(echo "$@" | tr ' ' ',')
+    timeout 20 powershell.exe -NoProfile -NonInteractive -Command "foreach (\$p in $ports) { try { \$l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, \$p); \$l.Start(); \$l.Stop(); \$p } catch {} }; exit 0" 2>/dev/null | tr -d '\r' && return
+  fi
+  printf '%s\n' "$@"
+}
+
+if [ -n "${PORT:-}" ]; then
+  free=$(free_here "$PORT")
+  [ -n "$free" ] && free=$(free_on_windows "$PORT")
+  [ -n "$free" ] || fail "Port $PORT is in use. Run ./start.sh without PORT to pick a free port, or choose another one."
+else
+  free=$(free_here $(seq 8000 8020))
+  [ -n "$free" ] && free=$(free_on_windows $free)
+  PORT=$(echo "$free" | head -n 1)
+  [ -n "$PORT" ] || fail "Ports 8000 to 8020 are all in use. Run PORT=<number> ./start.sh with a free port."
+  [ "$PORT" = 8000 ] || echo "Port 8000 is in use, so the app will use port $PORT."
+fi
 
 echo
 echo "Starting the app. Open http://localhost:$PORT when you see 'Application startup complete'."

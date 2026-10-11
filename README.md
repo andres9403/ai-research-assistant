@@ -16,7 +16,7 @@ cd ai-research-assistant
 ./start.sh        # Windows, in PowerShell: .\start.ps1
 ```
 
-The first run takes a few minutes: it creates a virtual environment, installs the dependencies and builds the frontend. When it prints `Application startup complete`, open <http://localhost:8000>. Press Ctrl+C to stop it. Running it again starts in seconds and keeps your library.
+The first run takes a few minutes: it creates a virtual environment, installs the dependencies and builds the frontend. When it prints `Application startup complete`, open the link it printed, normally <http://localhost:8000>. Press Ctrl+C to stop it. Running it again starts in seconds and keeps your library.
 
 **What to check.** Only the AI features need a model.
 
@@ -80,9 +80,9 @@ cd ai-research-assistant
 
 On Windows, run `.\start.ps1` in PowerShell instead. If PowerShell says running scripts is disabled, run `powershell -ExecutionPolicy Bypass -File .\start.ps1`.
 
-The script creates a virtual environment in `backend/.venv`, installs the Python and Node dependencies, builds the frontend, and starts one server that runs both the API and the app. The first run takes a few minutes; later runs reinstall only what changed. When you see `Application startup complete`, the app is running. On first start it creates `data/` in the repo root, which holds the database, the PDFs and the embedding model. To use another port, run `PORT=8001 ./start.sh` or `.\start.ps1 -Port 8001`.
+The script creates a virtual environment in `backend/.venv`, installs the Python and Node dependencies, builds the frontend, and starts one server that runs both the API and the app. The first run takes a few minutes; later runs reinstall only what changed. When you see `Application startup complete`, the app is running. On first start it creates `data/` in the repo root, which holds the database, the PDFs and the embedding model. It uses port 8000, or the next free port up to 8020 when 8000 is taken, and prints the link to open. To choose the port yourself, run `PORT=8001 ./start.sh` or `.\start.ps1 -Port 8001`.
 
-**4. Open <http://localhost:8000>.** The header shows an **AI model** dropdown when a model is available, or **AI off: no model set up** when none is. In that case, paste a key under **API keys** in the header, or in the Summary or Chat tab of any paper. Their **Check again** button finds Ollama as soon as its model is pulled.
+**4. Open the link the script printed, normally <http://localhost:8000>.** The header shows an **AI model** dropdown when a model is available, or **AI off: no model set up** when none is. In that case, paste a key under **API keys** in the header, or in the Summary or Chat tab of any paper. Their **Check again** button finds Ollama as soon as its model is pulled.
 
 To stop the app, press Ctrl+C. Your library is kept in `data/` and is there again the next time you start it.
 
@@ -310,7 +310,7 @@ To run the frontend tests and check that it compiles, run `npm test` and `npm ru
 | A paper shows **No PDF** | It has no open-access copy. Open the paper and use **Upload PDF** to attach one |
 | A paper shows **PDF unreadable** | The PDF has no extractable text, for example because it is a scan. Try a different copy |
 | The first question takes several seconds | The embedding model is downloaded the first time it is used, about 65 MB. A warning about `HF_TOKEN` in the backend log is harmless |
-| Port 8000 is already in use | Run `PORT=8001 ./start.sh` or `.\start.ps1 -Port 8001`, and open <http://localhost:8001>. With the development setup, run the backend with `--port 8001` and set `BACKEND_URL=http://localhost:8001` in `.env`; Vite picks the next free port by itself |
+| Port 8000 is already in use | The start script picks the next free port by itself and prints the link, so open that one. Under WSL it also skips ports Windows holds or reserves, which otherwise show Windows' *HTTP Error 404. The requested resource is not found* page. If you chose the port with `PORT` or `-Port`, choose another one or leave it out. With the development setup, run the backend with `--port 8001` and set `BACKEND_URL=http://localhost:8001` in `.env`; Vite picks the next free port by itself |
 
 ## License
 

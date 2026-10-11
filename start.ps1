@@ -1,7 +1,9 @@
 # Set up and start the whole app at http://localhost:8000 from one terminal.
 # The first run creates backend\.venv, installs the dependencies and builds the
 # frontend; later runs reuse them and reinstall only what changed.
-# Usage: .\start.ps1            (.\start.ps1 -Port 8001 to use another port)
+# Port 8000 is used if it is free, otherwise the next free one up to 8020; the
+# script prints the link to open.
+# Usage: .\start.ps1            (.\start.ps1 -Port 8001 to use that port only)
 # If PowerShell blocks the script, run it with:
 #   powershell -ExecutionPolicy Bypass -File .\start.ps1
 param([int]$Port = 8000)
@@ -78,6 +80,29 @@ try {
     Invoke-Checked npm run build --silent
 } finally {
     Pop-Location
+}
+
+# True if nothing holds the port and Windows hasn't reserved it (port 8000 is
+# sometimes reserved for HTTP.sys).
+function Test-PortFree([int]$port) {
+    try {
+        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
+        $listener.Start()
+        $listener.Stop()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+if ($PSBoundParameters.ContainsKey("Port")) {
+    if (-not (Test-PortFree $Port)) {
+        Fail "Port $Port is in use. Run .\start.ps1 without -Port to pick a free port, or choose another one."
+    }
+} else {
+    $Port = 8000..8020 | Where-Object { Test-PortFree $_ } | Select-Object -First 1
+    if (-not $Port) { Fail "Ports 8000 to 8020 are all in use. Run .\start.ps1 -Port <number> with a free port." }
+    if ($Port -ne 8000) { Write-Host "Port 8000 is in use, so the app will use port $Port." }
 }
 
 Write-Host ""
