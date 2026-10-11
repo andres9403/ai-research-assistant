@@ -210,6 +210,7 @@ class ChatMessageOut(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     citations: list[Citation] = []
+    background: str | None = None
     provider: str | None = None
     model: str | None = None
     input_tokens: int | None = None

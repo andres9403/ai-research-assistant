@@ -92,7 +92,9 @@ export default function ChatPanel({ paper, version }) {
         <div className="chat-empty">
           <p className="muted">
             Ask anything about this paper. Each question sends only the abstract, the conclusion and the passages
-            most relevant to it (about 3k tokens) to the model, and every answer cites the passages it used.
+            most relevant to it (about 3k tokens) to the model, and every answer cites the passages it used. When a
+            question needs more than the paper says, such as a term it doesn't define, the model adds background
+            from its general knowledge, labelled as not from the paper.
           </p>
           <div className="examples">
             {EXAMPLES.map((example) => (
@@ -193,6 +195,12 @@ function Answer({ message }) {
           );
         })}
       </p>
+      {message.background && (
+        <div className="background">
+          <p className="background-label small">Background · from the model's general knowledge, not the paper</p>
+          <p className="answer-text">{message.background}</p>
+        </div>
+      )}
       {message.citations.length > 0 ? (
         <ol className="citations">
           {message.citations.map((c) => (

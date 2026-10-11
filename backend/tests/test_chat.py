@@ -382,6 +382,50 @@ def test_answer_the_excerpts_do_not_cover_needs_no_citation(client, fake_llm):
     assert client.get(f"/api/papers/{paper_id}/chat").json()[1] == answer
 
 
+def test_background_is_kept_apart_from_the_answer(client, fake_llm):
+    fake_llm.answers["paper_answer"] = {
+        "answer": "The excerpts don't define McCormick envelopes; they call existing relaxations factorable [2].",
+        "found": True,
+        "background": "McCormick envelopes are the tightest convex relaxation of a bilinear term over a box [7].",
+    }
+    paper_id = upload(client).json()["id"]
+    answer = ask(client, paper_id, "What are McCormick envelopes?").json()["answer"]
+    assert answer["content"].endswith("factorable [1].")
+    # Background cites nothing: its markers would point at no passage.
+    assert answer["background"] == "McCormick envelopes are the tightest convex relaxation of a bilinear term over a box."
+    assert client.get(f"/api/papers/{paper_id}/chat").json()[1] == answer
+
+    # A follow-up sees the background too.
+    fake_llm.answers["paper_answer"] = {"answer": "It relaxes them [1].", "found": True, "background": ""}
+    ask(client, paper_id, "How does the paper use them?")
+    prompt = answer_calls(fake_llm)[1]["prompt"]
+    assert "\nBackground: McCormick envelopes are the tightest" in prompt
+    assert client.get(f"/api/papers/{paper_id}/chat").json()[3]["background"] is None
+
+
+def test_background_alone_answers_what_the_excerpts_do_not_cover(client, fake_llm):
+    fake_llm.answers["paper_answer"] = {
+        "answer": "The excerpts don't explain this.",
+        "found": False,
+        "background": "A convex envelope is the largest convex function below a given function.",
+    }
+    paper_id = upload(client).json()["id"]
+    resp = ask(client, paper_id, "What is a convex envelope?")
+    assert resp.status_code == 200
+    assert resp.json()["answer"]["citations"] == []
+    assert resp.json()["answer"]["background"].startswith("A convex envelope")
+
+
+def test_background_does_not_excuse_an_uncited_answer(client, fake_llm):
+    fake_llm.answers["paper_answer"] = {
+        "answer": "The paper uses McCormick envelopes.",
+        "found": True,
+        "background": "McCormick envelopes relax bilinear terms.",
+    }
+    paper_id = upload(client).json()["id"]
+    assert ask(client, paper_id, "What relaxation is used?").status_code == 502
+
+
 def test_embedding_model_failure_is_reported(client, fake_llm, fake_embedder):
     fake_llm.answers["paper_answer"] = {"answer": "x [1]"}
     paper_id = upload(client).json()["id"]
@@ -435,3 +479,18 @@ def test_m3_database_gets_the_embedding_column_and_chat_table(client):
         assert "embedding" in columns
         assert conn.execute("SELECT COUNT(*) FROM chunks WHERE embedding IS NULL").fetchone() == (0,)
         assert conn.execute("SELECT COUNT(*) FROM chat_messages").fetchone() == (0,)
+
+
+def test_older_chat_table_gets_the_background_column(client):
+    client.__exit__(None, None, None)
+    Base.metadata.drop_all(engine)
+    with sqlite3.connect(TEST_DB_PATH) as conn:  # chat_messages exactly as M4 created it
+        conn.execute(
+            "CREATE TABLE chat_messages (id INTEGER PRIMARY KEY, paper_id INTEGER, role VARCHAR(16),"
+            " content TEXT, citations JSON, provider VARCHAR(16), model VARCHAR(64), input_tokens INTEGER,"
+            " output_tokens INTEGER, created_at DATETIME)"
+        )
+    with TestClient(app):
+        pass
+    with sqlite3.connect(TEST_DB_PATH) as conn:
+        assert "background" in {row[1] for row in conn.execute("PRAGMA table_info(chat_messages)")}

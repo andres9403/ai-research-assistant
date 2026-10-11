@@ -159,3 +159,22 @@ Measured end to end on the development machine (WSL2, 12 CPU threads, no GPU), w
 | Question with citations (~2,200 tokens in) | 115 s, cited correctly |
 
 Loading the model before the first request adds about a minute. A machine with a supported GPU or Apple silicon is many times faster. The upload wait is the most noticeable cost. Moving the metadata pass to a background task would remove it, but that changes the upload flow for every provider, so it was left for a follow-up.
+
+### Issue #13 — Background knowledge in Q&A (October 10, 2026)
+
+Q&A answered only from the retrieved excerpts, so it refused questions about concepts a paper uses but doesn't define. Asked "what is McCormick envelopes" about a paper on convexifying Kolmogorov-Arnold Networks, it replied only that the excerpts don't define them. The user asked for the model's general knowledge to answer such questions.
+
+| Option | Verdict |
+|---|---|
+| Labelled background: a separate, uncited part of the answer, shown apart from the paper-based answer | **Chosen** |
+| Free mixing: drop the excerpts-only rule and let uncited sentences stand | Not chosen: you could no longer tell paper claims from the model's own |
+| A per-question "use general knowledge" toggle | Not chosen: an extra control for something the model can decide per question |
+
+How it works:
+
+- The structured answer has a third field, `background`. It holds general knowledge the question needs and the excerpts don't give, and is empty otherwise. The prompt forbids describing the paper or its results there.
+- `answer` stays grounded as before. An uncited answer is still rejected unless `found` is false, and background doesn't excuse it. Any `[n]` markers in background are stripped, because they would point at nothing.
+- Background is saved in a new nullable `chat_messages.background` column, added to older databases at startup. It goes into the conversation history for follow-ups and counts toward the history budget.
+- The Chat tab shows it in a separate block labelled "Background · from the model's general knowledge, not the paper".
+- It needs no extra LLM call. On the McCormick question with Claude Haiku, the answer used 4,911 tokens in and 299 out, cited two passages, and added a one-paragraph background. "What are the main results?" on the same paper got five citations and no background.
+
