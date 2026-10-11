@@ -1,8 +1,34 @@
 # AI Research Assistant
 
+[![CI](https://github.com/andres9403/ai-research-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/andres9403/ai-research-assistant/actions/workflows/ci.yml)
+
 Search research papers, save them to a local library, upload your own PDFs, and ask an LLM to summarize a paper or answer questions about it. Summaries and answers are drawn from the paper's **full text**, not just its abstract, and every answer cites the passages it used. When a question needs more than the paper says, such as a term it uses but doesn't define, the answer adds background from the model's general knowledge, labelled as not from the paper.
 
 The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLite. The AI runs on Anthropic Claude, OpenAI, or a free local model through [Ollama](https://ollama.com), which needs no account or API key. You can switch between them in the app.
+
+## For reviewers
+
+**Start it with one command.** You need only Python 3.11 or newer and Node.js 18 or newer.
+
+```bash
+git clone https://github.com/andres9403/ai-research-assistant.git
+cd ai-research-assistant
+./start.sh        # Windows, in PowerShell: .\start.ps1
+```
+
+The first run takes a few minutes: it creates a virtual environment, installs the dependencies and builds the frontend. When it prints `Application startup complete`, open <http://localhost:8000>. Press Ctrl+C to stop it. Running it again starts in seconds and keeps your library.
+
+**What to check.** Only the AI features need a model.
+
+| Requirement | How to check it | Needs an API key? |
+|---|---|---|
+| External API | On **Search**, search for `retrieval augmented generation`. The line above the results names the source: Semantic Scholar, or arXiv with the reason when Semantic Scholar is rate-limited | No |
+| Local database | Click **Save** on a result. Stop the app with Ctrl+C and start it again. The paper is still under **Library** | No |
+| PDF processing | On **Library**, click **Upload PDF** and choose a paper's PDF, such as one from arXiv. Open it and choose the **Extracted text** tab: the cleaned text, split into sections and chunks. Saved papers with an open-access PDF are processed the same way and show **Full text ✓** | No |
+| LLM | Open a paper that shows **Full text ✓**. On the **Summary** tab, click **Generate summary**. On the **Chat** tab, ask a question; the answer cites numbered passages you can click | Yes: an Anthropic or OpenAI key pasted under **API keys** in the header, or [Ollama](#local-model-no-api-key), which is free and needs no key |
+| Tests | The CI badge above shows the result of the backend tests (pytest) and the frontend tests and build, which run on every push. To run them yourself, see [Running the tests](#running-the-tests) | No |
+
+Without a key, the header shows **AI off: no model set up** and everything else works. [docs/TUTORIAL.md](docs/TUTORIAL.md) walks through the AI features step by step, and the screenshots under [Using the app](#using-the-app) show their results. A link to the demo video will be added here.
 
 ![Paper detail page with a cited answer](docs/images/chat.png)
 
@@ -18,14 +44,12 @@ The backend is FastAPI, the frontend is React (Vite), and data is stored in SQLi
 
 ## Requirements
 
-- **Python 3.11 or newer.** Tested on 3.11 and 3.13.
+- **Python 3.11 or newer.** Tested on 3.11 and 3.13. On macOS the default `python3` can be 3.9, which is too old: install a newer one from [python.org](https://www.python.org/downloads/) or with `brew install python@3.12`. The start scripts look for `python3.13`, `python3.12` and `python3.11` before `python3`, so they find it.
 - **Node.js 18 or newer.** Tested on 18 and 24.
 - **An AI model** for summaries and Q&A: an Anthropic or OpenAI API key, which you can paste into the app, or [Ollama](https://ollama.com) running on your machine (free, no key; see [Local model](#local-model-no-api-key)). Without one, search, the library and PDF upload still work, and the AI features are switched off.
 - Internet access for paper search, PDF downloads, the LLM, and a one-time download of the embedding model (about 65 MB).
 
 ## Quick start
-
-These commands are for Linux and macOS. On Windows, see [the note below](#windows).
 
 **1. Clone the repository.**
 
@@ -36,15 +60,9 @@ cd ai-research-assistant
 
 **2. Choose an AI model.** Pick one of these. You can also add or change it later, while the app is running.
 
-- **An API key, pasted into the app (simplest).** Nothing to do yet. Once the app is open (step 5), click **API keys** in the header, choose Anthropic Claude or OpenAI, paste your key and click **Save key**. The app checks the key with the provider and saves it to `.env` for you, so it is kept after a restart. There is no file to edit and nothing to restart.
+- **An API key, pasted into the app (simplest).** Nothing to do yet. Once the app is open (step 4), click **API keys** in the header, choose Anthropic Claude or OpenAI, paste your key and click **Save key**. The app checks the key with the provider and saves it to `.env` for you, so it is kept after a restart. There is no file to edit and nothing to restart.
 
-- **An API key in `.env`.** If you prefer to edit the file yourself:
-
-  ```bash
-  cp .env.example .env
-  ```
-
-  Open `.env` and set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, or both. If you set only the OpenAI key, also set `LLM_PROVIDER=openai`. You can leave every other setting as it is.
+- **An API key in `.env`.** If you prefer to edit the file yourself, copy `.env.example` to `.env`, then set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, or both. If you set only the OpenAI key, also set `LLM_PROVIDER=openai`. You can leave every other setting as it is.
 
 - **No API key: a local model.** Install [Ollama](https://ollama.com/download), then download the model, about 3.3 GB:
 
@@ -54,38 +72,46 @@ cd ai-research-assistant
 
   There is nothing to put in `.env`. The app finds Ollama by itself while it is running. It is slower than the hosted models; see [Local model](#local-model-no-api-key).
 
-**3. Start the backend** in its own terminal.
+**3. Start the app.**
 
 ```bash
+./start.sh
+```
+
+On Windows, run `.\start.ps1` in PowerShell instead. If PowerShell says running scripts is disabled, run `powershell -ExecutionPolicy Bypass -File .\start.ps1`.
+
+The script creates a virtual environment in `backend/.venv`, installs the Python and Node dependencies, builds the frontend, and starts one server that runs both the API and the app. The first run takes a few minutes; later runs reinstall only what changed. When you see `Application startup complete`, the app is running. On first start it creates `data/` in the repo root, which holds the database, the PDFs and the embedding model. To use another port, run `PORT=8001 ./start.sh` or `.\start.ps1 -Port 8001`.
+
+**4. Open <http://localhost:8000>.** The header shows an **AI model** dropdown when a model is available, or **AI off: no model set up** when none is. In that case, paste a key under **API keys** in the header, or in the Summary or Chat tab of any paper. Their **Check again** button finds Ollama as soon as its model is pulled.
+
+To stop the app, press Ctrl+C. Your library is kept in `data/` and is there again the next time you start it.
+
+> `npm ci` on npm 11 may warn that esbuild's install script was not run. You can ignore that warning; the app still builds and runs.
+
+### Development setup
+
+To work on the code with live reload, run the backend and the frontend separately, each in its own terminal.
+
+```bash
+# Terminal 1: the backend, at http://localhost:8000
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn app.main:app --port 8000
-```
+.venv/bin/uvicorn app.main:app --reload --port 8000
 
-When you see `Application startup complete`, the backend is running. On first start it creates `data/` in the repo root, which holds the database, the PDFs and the embedding model.
-
-**4. Start the frontend** in a second terminal.
-
-```bash
+# Terminal 2: the frontend, at http://localhost:5173
 cd frontend
 npm install
 npm run dev
 ```
 
-**5. Open <http://localhost:5173>.** The header shows an **AI model** dropdown when a model is available, or **AI off: no model set up** when none is. In that case, paste a key under **API keys** in the header, or in the Summary or Chat tab of any paper. Their **Check again** button finds Ollama as soon as its model is pulled.
+Then open <http://localhost:5173>. The Vite dev server reloads the page as you edit and sends `/api` requests to the backend.
 
-To stop the app, press Ctrl+C in both terminals. Your library is kept in `data/` and is there again the next time you start it.
-
-> `npm install` on npm 11 may warn that esbuild's install script was not run. You can ignore that warning; the app still builds and runs.
-
-### Windows
-
-Run the same steps in PowerShell, with these changes: use `python` instead of `python3`, `copy` instead of `cp`, and `.venv\Scripts\` instead of `.venv/bin/`.
+On Windows, run the same steps in PowerShell with `python` instead of `python3` and `.venv\Scripts\` instead of `.venv/bin/`:
 
 ```powershell
 .venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\uvicorn app.main:app --port 8000
+.venv\Scripts\uvicorn app.main:app --reload --port 8000
 ```
 
 ## Using the app
@@ -181,6 +207,8 @@ Here is what happens behind each action:
 4. **Summary.** The highest-ranked sections, about 8k tokens at most, are sent to the selected LLM. The structured summary it returns is cached.
 5. **Question.** The question is embedded and the most relevant chunks are retrieved. Those chunks and the recent conversation are sent to the LLM, which answers with numbered citations. Both the question and the answer are saved.
 
+`start.sh` and `start.ps1` build the frontend into `frontend/dist`, and FastAPI serves that build at `/`, after the `/api` routes, so the whole app runs at one URL. In development, the Vite dev server serves the frontend instead and sends `/api` requests to the backend.
+
 The design decisions behind this, and the alternatives that were considered, are recorded in [docs/PLANNING.md](docs/PLANNING.md).
 
 ## Configuration
@@ -248,6 +276,8 @@ docs/
   PLANNING.md         design decisions and milestones
   TUTORIAL.md         step-by-step walkthrough and demo-video script
 data/                 created at runtime, git-ignored
+start.sh, start.ps1   one-command setup and start
+.github/workflows/    CI: backend tests, frontend tests and build, start scripts
 ```
 
 ## Running the tests
@@ -259,13 +289,17 @@ cd backend
 
 The suite uses a temporary data directory and mocks the LLM providers, the embedding model and all external HTTP calls, so it needs no API keys or network access.
 
-To check that the frontend compiles, run `npm run build` from `frontend/`.
+To run the frontend tests and check that it compiles, run `npm test` and `npm run build` from `frontend/`.
+
+[CI](https://github.com/andres9403/ai-research-assistant/actions/workflows/ci.yml) runs all of these on every push and pull request, on Python 3.11 and 3.13 and Node.js 18 and 24. It also runs the start scripts on Linux, macOS and Windows and checks that the app answers at <http://localhost:8000>.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| The header says **backend unreachable** | Start the backend (step 3) on port 8000, or set `BACKEND_URL` if it runs on a different port. Then reload the page |
+| The start script says Python 3.11 or newer is required | Install a newer Python; see [Requirements](#requirements). On macOS the default `python3` can be 3.9 |
+| The start script says `backend/.venv` was made with an older Python | Delete `backend/.venv` and run the script again |
+| The header says **backend unreachable** | The server has stopped: run the start script again. With the [development setup](#development-setup), start the backend on port 8000, or set `BACKEND_URL` if it runs on a different port. Then reload the page |
 | The header says **AI off: no model set up** | Paste a key under **API keys** in the header. Or start Ollama and run `ollama pull gemma3:4b`, then click **Check again** in the Summary or Chat tab |
 | **Save key** says the key was rejected | Copy the whole key again from the provider's console. The key must also be allowed to use the configured model (`ANTHROPIC_MODEL` or `OPENAI_MODEL`) |
 | A key saved in the app is gone after a restart | A variable with the same name in your shell overrides `.env`. Run `unset ANTHROPIC_API_KEY OPENAI_API_KEY SEMANTIC_SCHOLAR_API_KEY` before starting the backend |
@@ -276,7 +310,7 @@ To check that the frontend compiles, run `npm run build` from `frontend/`.
 | A paper shows **No PDF** | It has no open-access copy. Open the paper and use **Upload PDF** to attach one |
 | A paper shows **PDF unreadable** | The PDF has no extractable text, for example because it is a scan. Try a different copy |
 | The first question takes several seconds | The embedding model is downloaded the first time it is used, about 65 MB. A warning about `HF_TOKEN` in the backend log is harmless |
-| Port 8000 or 5173 is already in use | Run the backend with `--port 8001` and set `BACKEND_URL=http://localhost:8001` in `.env`. Vite picks the next free port by itself |
+| Port 8000 is already in use | Run `PORT=8001 ./start.sh` or `.\start.ps1 -Port 8001`, and open <http://localhost:8001>. With the development setup, run the backend with `--port 8001` and set `BACKEND_URL=http://localhost:8001` in `.env`; Vite picks the next free port by itself |
 
 ## License
 

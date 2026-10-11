@@ -189,3 +189,15 @@ How it works:
 - Search settings live under their own route, `GET /api/settings/search`, which says only whether a key is set. They are kept out of `GET /api/settings/llm` because Semantic Scholar is not an LLM provider.
 - `SearchResponse.suggest_s2_key` is true when Semantic Scholar answered 429 and no key is set. The results note then links to the API keys menu with Semantic Scholar already chosen. A 429 with a key set doesn't suggest one, because a key's own limit (1 request per second) was hit.
 - The key stays optional. Semantic Scholar approves keys after a request form and prioritises academic, nonprofit and government requests, so search keeps working without one, through the keyless shared limit or the arXiv fallback.
+
+### Issue #7 — Running and checking the app as an outside reviewer (October 10, 2026)
+
+The quick start needed a virtualenv, two installs and two terminals before anything was on screen, and a reviewer couldn't tell which checks needed an API key. On macOS the default `python3` can be 3.9, too old for the backend.
+
+How it works:
+
+- `start.sh` and `start.ps1` find Python 3.11+ (trying `python3.13`, `python3.12` and `python3.11` before `python3`, or the `py` launcher on Windows), create `backend/.venv`, install the dependencies, build the frontend and start uvicorn. A copy of `requirements.txt` in the venv records the last successful install, so later runs skip `pip` unless it changed.
+- FastAPI serves `frontend/dist` at `/` when it exists. `create_app()` mounts it after every router, so `/api` and `/docs` still reach FastAPI. The frontend uses hash routes, so no fallback to `index.html` for unknown paths is needed. `npm run dev` stays the development path.
+- GitHub Actions runs the backend suite on Python 3.11 and 3.13, the frontend tests and build on Node 18 and 24, and the start scripts on Linux, macOS and Windows with each runner's preinstalled Python and Node. The suite already mocks every external service, so CI needs no secrets.
+- The README opens with a **For reviewers** section: the one command, and a table mapping each requirement to a check and whether it needs a key.
+- **Docker stays out (Q11).** The start scripts meet the goal of one command with only Python and Node installed. Docker would add an image to maintain and volume handling for `data/` and the `.env` that the app writes keys to. It can be added later beside the scripts if a reviewer can't install Python or Node.
