@@ -73,6 +73,8 @@ class SearchResponse(BaseModel):
     # Filters the answering provider could not apply, so results ignore them.
     unapplied_filters: list[str] = []
     notes: list[str] = []  # how the filters and ordering were applied, for the user
+    # Semantic Scholar rate-limited a keyless search, so a key would have avoided the fallback.
+    suggest_s2_key: bool = False
     results: list[SearchResult]
 
 
@@ -147,6 +149,12 @@ class LLMSettingsOut(BaseModel):
     default: str | None
     providers: list[LLMProviderOut]
     ollama: OllamaOut
+
+
+class SearchSettingsOut(BaseModel):
+    """Whether a Semantic Scholar key is set. The key itself never leaves the backend."""
+
+    semantic_scholar_key: bool
 
 
 class SummaryContent(BaseModel):

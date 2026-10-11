@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import PaperCard from "../components/PaperCard.jsx";
+import { useLlm } from "../llm.jsx";
 
 const PROVIDER_LABELS = { s2: "Semantic Scholar", arxiv: "arXiv" };
 
@@ -49,6 +50,7 @@ function yearError({ year_from, year_to }) {
 // `active` is false while another tab is shown; this view stays mounted so the
 // results survive, and are rechecked against the library on the way back.
 export default function SearchView({ active }) {
+  const { openKeys } = useLlm();
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
@@ -248,6 +250,15 @@ export default function SearchView({ active }) {
             {PROVIDER_LABELS[state.provider]}
             {state.fallback_reason && <> · {state.fallback_reason}</>}
           </p>
+          {state.suggest_s2_key && (
+            <p className="muted small">
+              Semantic Scholar limits searches made without an API key.{" "}
+              <button type="button" className="link-button" onClick={() => openKeys("semantic_scholar")}>
+                Add a Semantic Scholar API key
+              </button>{" "}
+              to avoid falling back to arXiv.
+            </p>
+          )}
           {state.notes?.length > 0 && (
             <ul className="search-notes" aria-label="How the filters were applied">
               {state.notes.map((note) => (

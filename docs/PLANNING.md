@@ -178,3 +178,14 @@ How it works:
 - The Chat tab shows it in a separate block labelled "Background · from the model's general knowledge, not the paper".
 - It needs no extra LLM call. On the McCormick question with Claude Haiku, the answer used 4,911 tokens in and 299 out, cited two passages, and added a one-paragraph background. "What are the main results?" on the same paper got five citations and no background.
 
+### Issue #12 — Semantic Scholar key from the app (October 10, 2026)
+
+Without a key, Semantic Scholar often answers HTTP 429, so many searches fall back to arXiv, which ranks exact titles worse and lacks the venue, paper-type and citation-sort filters. Adding a key meant editing `.env` and restarting, and the 429 note didn't say a key would help.
+
+How it works:
+
+- **API keys** in the header offers **Semantic Scholar (search)** next to the LLM providers. `PUT /api/settings/search/keys/semantic_scholar` reuses the issue #8 path in `services/api_keys.py`: the same key-shape check, then the same atomic, owner-only write to `.env`, then the running settings are updated. Search and the upload metadata lookup read the key on every request, so no restart is needed.
+- The check is one `GET /graph/v1/paper/arXiv:1706.03762?fields=paperId` with the key in `x-api-key`. A 2xx accepts the key. 401 or 403 rejects it. A 429, another error status or no connection means the key couldn't be confirmed, and nothing is saved in any of these cases; the user is told to try again.
+- Search settings live under their own route, `GET /api/settings/search`, which says only whether a key is set. They are kept out of `GET /api/settings/llm` because Semantic Scholar is not an LLM provider.
+- `SearchResponse.suggest_s2_key` is true when Semantic Scholar answered 429 and no key is set. The results note then links to the API keys menu with Semantic Scholar already chosen. A 429 with a key set doesn't suggest one, because a key's own limit (1 request per second) was hit.
+- The key stays optional. Semantic Scholar approves keys after a request form and prioritises academic, nonprofit and government requests, so search keeps working without one, through the keyless shared limit or the arXiv fallback.

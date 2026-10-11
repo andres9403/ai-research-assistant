@@ -197,11 +197,13 @@ All settings are read from `.env` in the repo root. None are required: with Olla
 | `OLLAMA_MODEL` | `gemma3:4b` | The local model. It must be pulled with `ollama pull` |
 | `OLLAMA_TIMEOUT` | `900` | Seconds before an Ollama request gives up |
 | `OLLAMA_NUM_CTX` | `16384` | The local model's context window in tokens. Summaries need about 9k |
-| `SEMANTIC_SCHOLAR_API_KEY` | none | Raises Semantic Scholar's rate limits. Without a key, searches often fall back to arXiv |
+| `SEMANTIC_SCHOLAR_API_KEY` | none | Optional. Raises Semantic Scholar's rate limit for search and the upload metadata lookup. Without a key, searches often fall back to arXiv. It can also be pasted under **API keys** in the app |
 | `DATA_DIR` | `data/` | Where the database, PDFs and embedding model are stored |
 | `BACKEND_URL` | `http://localhost:8000` | Where the frontend dev server sends `/api` requests. Change it if the backend runs on another port |
 
-Restart the backend after you edit `.env` by hand. Keys saved under **API keys** in the app are written to `.env` and take effect at once, and Ollama needs no restart either: the app checks for it on every AI request. A variable set in your shell, such as an exported `ANTHROPIC_API_KEY`, overrides `.env`.
+Restart the backend after you edit `.env` by hand. Keys saved under **API keys** in the app (Anthropic, OpenAI and Semantic Scholar) are written to `.env` and take effect at once, and Ollama needs no restart either: the app checks for it on every AI request. A variable set in your shell, such as an exported `ANTHROPIC_API_KEY`, overrides `.env`.
+
+Semantic Scholar approves API keys after you [request one](https://www.semanticscholar.org/product/api#api-key-form), which can take a while, so the key is optional and search works without it. Once you have one, open **API keys**, choose **Semantic Scholar (search)**, paste it and click **Save key**. The app checks it with one small Semantic Scholar request before saving it, and **Remove** next to it deletes it from `.env`.
 
 ## API
 
@@ -210,7 +212,7 @@ Every route is under `/api`. While the backend is running, interactive documenta
 | Method and path | Purpose |
 |---|---|
 | `GET /api/health` | Backend and database check |
-| `GET /api/search?q=&limit=&author=&year_from=&year_to=&venue=&publication_type=&open_access=&sort=` | Search Semantic Scholar, with arXiv as fallback. Filters are optional; `notes` and `unapplied_filters` report any a source could not apply |
+| `GET /api/search?q=&limit=&author=&year_from=&year_to=&venue=&publication_type=&open_access=&sort=` | Search Semantic Scholar, with arXiv as fallback. Filters are optional; `notes` and `unapplied_filters` report any a source could not apply, and `suggest_s2_key` is true when a keyless search was rate-limited |
 | `GET /api/papers?q=&source=&year_from=&year_to=` | List and filter the library |
 | `POST /api/papers` | Save a search result. Answers 409 if it is a duplicate |
 | `GET`, `PATCH`, `DELETE /api/papers/{id}` | Read, edit or delete a paper |
@@ -223,6 +225,8 @@ Every route is under `/api`. While the backend is running, interactive documenta
 | `GET`, `POST`, `DELETE /api/papers/{id}/chat` | Read the conversation, ask a question, or clear the conversation |
 | `GET /api/settings/llm` | The LLM providers that can answer, the default, and whether Ollama is running. API keys are never returned |
 | `PUT`, `DELETE /api/settings/llm/keys/{provider}` | Check an Anthropic or OpenAI key and save it to `.env` (body `{"key": "..."}`), or remove it. Both answer with the LLM settings, never the key |
+| `GET /api/settings/search` | Whether a Semantic Scholar key is set. The key is never returned |
+| `PUT`, `DELETE /api/settings/search/keys/semantic_scholar` | Check a Semantic Scholar key and save it to `.env` (body `{"key": "..."}`), or remove it. Both answer with the search settings, never the key |
 
 ## Project layout
 
@@ -264,10 +268,11 @@ To check that the frontend compiles, run `npm run build` from `frontend/`.
 | The header says **backend unreachable** | Start the backend (step 3) on port 8000, or set `BACKEND_URL` if it runs on a different port. Then reload the page |
 | The header says **AI off: no model set up** | Paste a key under **API keys** in the header. Or start Ollama and run `ollama pull gemma3:4b`, then click **Check again** in the Summary or Chat tab |
 | **Save key** says the key was rejected | Copy the whole key again from the provider's console. The key must also be allowed to use the configured model (`ANTHROPIC_MODEL` or `OPENAI_MODEL`) |
-| A key saved in the app is gone after a restart | A variable with the same name in your shell overrides `.env`. Run `unset ANTHROPIC_API_KEY OPENAI_API_KEY` before starting the backend |
+| A key saved in the app is gone after a restart | A variable with the same name in your shell overrides `.env`. Run `unset ANTHROPIC_API_KEY OPENAI_API_KEY SEMANTIC_SCHOLAR_API_KEY` before starting the backend |
 | A summary or upload takes minutes with Ollama | Local models are slow on a computer without a GPU; see [Local model](#local-model-no-api-key). Use a smaller model, or an API key |
 | *Ollama took longer than 900 seconds* | Raise `OLLAMA_TIMEOUT` in `.env`, or use a smaller model |
-| Search says *Semantic Scholar unavailable (HTTP 429)* | Semantic Scholar is rate-limiting keyless requests. The results come from arXiv instead. Add `SEMANTIC_SCHOLAR_API_KEY` to avoid this |
+| Search says *Semantic Scholar unavailable (HTTP 429)* | Semantic Scholar is rate-limiting keyless requests, so the results come from arXiv instead. Click **Add a Semantic Scholar API key** under the result count, or open **API keys** in the header, and save your key. If you have no key yet, [request one](https://www.semanticscholar.org/product/api#api-key-form) or search again in a minute |
+| **Save key** says Semantic Scholar rejected the key | Copy the whole key again from Semantic Scholar's email. If it says Semantic Scholar is rate-limiting requests, wait a minute and save it again |
 | A paper shows **No PDF** | It has no open-access copy. Open the paper and use **Upload PDF** to attach one |
 | A paper shows **PDF unreadable** | The PDF has no extractable text, for example because it is a scan. Try a different copy |
 | The first question takes several seconds | The embedding model is downloaded the first time it is used, about 65 MB. A warning about `HF_TOKEN` in the backend log is harmless |

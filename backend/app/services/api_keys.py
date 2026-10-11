@@ -1,4 +1,4 @@
-"""API keys entered in the app (issue #8): checked with the provider, then saved to `.env`.
+"""API keys entered in the app (issues #8 and #12): checked with the provider, then saved to `.env`.
 
 A saved key goes into the git-ignored `.env` that config.py reads, so it survives
 a restart exactly as if it had been typed there, and it applies to the running
@@ -11,9 +11,13 @@ from pathlib import Path
 
 from app import config
 from app.config import settings
-from app.services import llm
+from app.services import http, llm, search
 
-ENV_VARS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+ENV_VARS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "semantic_scholar": "SEMANTIC_SCHOLAR_API_KEY",
+}
 # Provider keys are letters, digits, "-" and "_". Anything else, a newline above
 # all, could add or change other settings in `.env`.
 KEY_FORMAT = re.compile(r"[A-Za-z0-9_-]{20,400}")
@@ -26,13 +30,18 @@ class InvalidKey(Exception):
 def save(name: str, key: str) -> None:
     """Check `key` with provider `name`, then save it to `.env` and use it from now on.
 
-    Raises InvalidKey for text that isn't key-shaped, and LLMError when the
-    provider rejects the key; nothing is saved in either case.
+    Raises InvalidKey for text that isn't key-shaped, and LLMError (or
+    search.KeyCheckError for Semantic Scholar) when the key can't be confirmed;
+    nothing is saved in any of these cases.
     """
     key = key.strip()
     if not KEY_FORMAT.fullmatch(key):
         raise InvalidKey("That doesn't look like an API key. Paste the whole key, with no spaces.")
-    llm.check_key(name, key)
+    if name == "semantic_scholar":
+        with http.make_client() as client:
+            search.check_key(client, key)
+    else:
+        llm.check_key(name, key)
     write_env(config.ENV_FILE, ENV_VARS[name], key)
     setattr(settings, f"{name}_api_key", key)
 

@@ -21,6 +21,8 @@ from app.services import http
 from app.schemas import SearchFilters, SearchResult
 
 S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
+# One small, fixed lookup (Attention Is All You Need) that any working key can make.
+S2_KEY_CHECK_URL = "https://api.semanticscholar.org/graph/v1/paper/arXiv:1706.03762"
 S2_FIELDS = "paperId,title,authors,year,abstract,url,externalIds,openAccessPdf,venue,citationCount"
 S2_MAX_LIMIT = 100  # the most /paper/search returns in one page
 ARXIV_QUERY_URL = "https://export.arxiv.org/api/query"
@@ -39,6 +41,10 @@ class SearchError(Exception):
     """Every search provider failed."""
 
 
+class KeyCheckError(Exception):
+    """A Semantic Scholar key was rejected or couldn't be checked; the message is safe to show."""
+
+
 @dataclass
 class SearchOutcome:
     provider: str
@@ -46,6 +52,7 @@ class SearchOutcome:
     fallback_reason: str | None = None
     unapplied_filters: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    suggest_s2_key: bool = False  # Semantic Scholar rate-limited a keyless search
 
 
 @dataclass
@@ -81,11 +88,21 @@ class SearchService:
                 reason += " matching the filters"
         except (httpx.HTTPError, ValueError) as exc:
             reason = f"Semantic Scholar unavailable ({_describe(exc)})"
+            rate_limited = isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
+        else:
+            rate_limited = False
 
         try:
             request = arxiv_request(query, limit, filters)
             results = self.search_arxiv(query, limit, filters)
-            return SearchOutcome("arxiv", results, reason, request.unapplied_filters, request.notes)
+            return SearchOutcome(
+                "arxiv",
+                results,
+                reason,
+                request.unapplied_filters,
+                request.notes,
+                suggest_s2_key=rate_limited and not self.s2_api_key,
+            )
         except (httpx.HTTPError, ET.ParseError) as exc:
             raise SearchError(f"{reason}; arXiv unavailable ({_describe(exc)})") from exc
 
@@ -114,6 +131,22 @@ class SearchService:
         if not request.params:
             return []
         return query_arxiv(self.client, request.params)
+
+
+def check_key(client: httpx.Client, key: str) -> None:
+    """Raise KeyCheckError unless Semantic Scholar accepts `key`, using one small request."""
+    try:
+        resp = client.get(S2_KEY_CHECK_URL, params={"fields": "paperId"}, headers={"x-api-key": key})
+    except httpx.HTTPError as exc:
+        raise KeyCheckError(f"Couldn't reach Semantic Scholar to check the key ({_describe(exc)}).") from exc
+    if resp.status_code in (401, 403):
+        raise KeyCheckError("Semantic Scholar rejected this API key.")
+    if resp.status_code == 429:
+        raise KeyCheckError(
+            "Semantic Scholar is rate-limiting requests, so the key couldn't be checked. Try again in a minute."
+        )
+    if not resp.is_success:
+        raise KeyCheckError(f"Semantic Scholar couldn't check the key (HTTP {resp.status_code}). Try again later.")
 
 
 def s2_request(query: str, limit: int, filters: SearchFilters) -> ProviderRequest:
