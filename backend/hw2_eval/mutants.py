@@ -1,0 +1,151 @@
+"""Hand-seeded faults ("mutants") used to measure a test suite's fault-detection capability.
+
+Each mutant replaces one exact snippet of application code with a faulty version that
+violates a stated requirement (docs/PLANNING.md, docstrings or comments). A suite
+"kills" a mutant when at least one of its tests fails against the mutated code.
+
+The list was written before any HW2 test was generated and is frozen, so the
+initial and improved suites are scored against the same faults.
+"""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Mutant:
+    id: str
+    file: str  # relative to backend/
+    requirement: str  # the behaviour the fault breaks
+    old: str
+    new: str
+
+
+MUTANTS = [
+    # --- library: saving, duplicate detection, listing, editing ---------------------------
+    Mutant("M01", "app/services/library.py", "DOI URLs/prefixes are normalised so duplicates match",
+           'doi = re.sub(r"^(https?://(dx\\.)?doi\\.org/|doi:)", "", doi.strip(), flags=re.I)',
+           "doi = doi.strip()"),
+    Mutant("M02", "app/services/library.py", "Accents don't hide a duplicate title",
+           'text = "".join(c for c in decomposed if not unicodedata.combining(c)).lower()',
+           "text = title.lower()"),
+    Mutant("M03", "app/services/library.py", "Duplicates match on (source, external id)",
+           "if paper.external_id and (paper.source, paper.external_id) in self.by_external:",
+           "if False:"),
+    Mutant("M04", "app/services/library.py", "Editing can't blank a paper's title",
+           'changes.pop("title")  # a paper always keeps a title',
+           "pass"),
+    Mutant("M05", "app/services/library.py", "An edited paper is not a duplicate of itself",
+           "DuplicateIndex(session, exclude_id=paper.id).match(paper)",
+           "DuplicateIndex(session).match(paper)"),
+    Mutant("M06", "app/services/library.py", "User edits mark metadata_source='edited'",
+           'paper.metadata_source = "edited"',
+           "pass"),
+    Mutant("M07", "app/services/library.py", "Library lists newest papers first",
+           "order_by(Paper.created_at.desc(), Paper.id.desc())",
+           "order_by(Paper.created_at.asc(), Paper.id.asc())"),
+    Mutant("M08", "app/services/library.py", "year_to filter is inclusive",
+           "stmt = stmt.where(Paper.year <= year_to)",
+           "stmt = stmt.where(Paper.year < year_to)"),
+    Mutant("M09", "app/services/library.py", "Library search also matches abstracts",
+           "                Paper.abstract.icontains(q, autoescape=True),\n",
+           ""),
+    # --- routers ------------------------------------------------------------------------
+    Mutant("M10", "app/routers/papers.py", "Deleting a paper deletes its stored PDF",
+           "    pipeline.remove_pdf(paper)\n    session.delete(paper)",
+           "    session.delete(paper)"),
+    Mutant("M11", "app/routers/upload.py", "Can't attach a PDF while one is being processed (409)",
+           "if paper.status in pipeline.BUSY:",
+           "if False:"),
+    Mutant("M12", "app/routers/ai.py", "Summaries are cached unless refresh=true",
+           "if paper.summary is not None and not refresh:",
+           "if paper.summary is not None and refresh:"),
+    Mutant("M13", "app/routers/ai.py", "LLM failures during Q&A answer 502",
+           "    except llm.LLMError as exc:\n        raise HTTPException(502, str(exc)) from exc\n    return ChatExchangeOut(",
+           "    except llm.LLMError as exc:\n        raise HTTPException(500, str(exc)) from exc\n    return ChatExchangeOut("),
+    Mutant("M14", "app/routers/ai.py", "DELETE /chat clears the thread",
+           "    paper.messages = []\n",
+           "    pass\n"),
+    Mutant("M15", "app/routers/search.py", "A blank search query is rejected (422)",
+           "if not q.strip():",
+           "if False:"),
+    # --- chat / retrieval / summaries (LLM features) -------------------------------------
+    Mutant("M16", "app/services/chat.py", "Citations are renumbered 1, 2, … in order of first use",
+           "order.setdefault(n, len(order) + 1)",
+           "order.setdefault(n, n)"),
+    Mutant("M17", "app/services/chat.py", "An answer citing no passage is rejected unless found=false",
+           'if not citations and result.data.get("found") is not False:',
+           "if False:"),
+    Mutant("M18", "app/services/chat.py", "Conversation history starts on a user question",
+           'while kept and kept[0].role != "user":',
+           "while False:"),
+    Mutant("M19", "app/services/summaries.py", "Empty summary fields get the 'Not described' placeholder",
+           "or NOT_COVERED for field in FIELDS}",
+           'or "" for field in FIELDS}'),
+    Mutant("M20", "app/services/summaries.py", "Summary context stays within the token budget",
+           "            if used + chunk.n_tokens <= budget:\n                chosen.append(chunk)",
+           "            if True:\n                chosen.append(chunk)"),
+    Mutant("M21", "app/services/retrieval.py", "Retrieved chunks stay within the token budget",
+           "if id(chunk) in taken or used + chunk.n_tokens > budget:",
+           "if id(chunk) in taken:"),
+    Mutant("M22", "app/services/retrieval.py", "Retrieved excerpts are returned in paper order",
+           "    chosen.sort(key=lambda r: r.chunk.ordinal)\n    return chosen",
+           "    return chosen"),
+    # --- API keys -----------------------------------------------------------------------
+    Mutant("M23", "app/services/api_keys.py", "Key-shaped text only (no newlines → no .env injection)",
+           'KEY_FORMAT = re.compile(r"[A-Za-z0-9_-]{20,400}")',
+           'KEY_FORMAT = re.compile(r"[\\s\\S]{20,400}")'),
+    Mutant("M24", "app/services/api_keys.py", "Saving a key replaces the existing .env line in place",
+           '            if not done:\n                out.append(f"{var}={value}")\n                done = True\n            continue\n',
+           "            out.append(line)\n            continue\n"),
+    Mutant("M25", "app/services/api_keys.py", "Removing a key stops the running backend using it",
+           'setattr(settings, f"{name}_api_key", None)',
+           "pass"),
+    # --- external search ----------------------------------------------------------------
+    Mutant("M26", "app/services/search.py", "Empty Semantic Scholar results fall back to arXiv",
+           '            if results:\n                return SearchOutcome("s2", results',
+           '            if True:\n                return SearchOutcome("s2", results'),
+    Mutant("M27", "app/services/search.py", "Author filter matches word prefixes (\"a vaswani\")",
+           "word.startswith(w)",
+           "word == w"),
+    Mutant("M28", "app/services/search.py", "sort=citations puts the most cited first",
+           "results.sort(key=lambda p: -(p.citation_count or 0))",
+           "results.sort(key=lambda p: (p.citation_count or 0))"),
+    Mutant("M29", "app/services/search.py", "arXiv ids drop their version suffix",
+           're.sub(r"v\\d+$", "", entry_id.split("/abs/", 1)[1])',
+           'entry_id.split("/abs/", 1)[1]'),
+    Mutant("M30", "app/schemas.py", "year_from later than year_to is rejected",
+           "if self.year_from and self.year_to and self.year_from > self.year_to:",
+           "if False:"),
+    # --- PDF pipeline & security --------------------------------------------------------
+    Mutant("M31", "app/services/http.py", "PDF downloads refuse private/loopback addresses (SSRF guard)",
+           "if not ip.is_global or ip.is_multicast:",
+           "if ip.is_multicast:"),
+    Mutant("M32", "app/services/pipeline.py", "A link to an HTML page is reported as 'not a PDF file'",
+           'if b"%PDF-" not in data[:1024]:',
+           "if False:"),
+    Mutant("M33", "app/services/pipeline.py", "PDF metadata only fills blank fields, never overwrites",
+           "paper.abstract = paper.abstract or meta.abstract",
+           "paper.abstract = meta.abstract or paper.abstract"),
+    Mutant("M34", "app/services/pipeline.py", "Uploading a PDF of a paper that already has one → 409",
+           "if existing.has_pdf or existing.status in BUSY:",
+           "if existing.status in BUSY:"),
+    Mutant("M35", "app/services/pipeline.py", "Restart recovery keeps chunked papers 'ready'",
+           'paper.status = "ready" if paper.chunks else "no_pdf"',
+           'paper.status = "no_pdf"'),
+    Mutant("M36", "app/services/pipeline.py", "A new PDF invalidates the cached summary",
+           "paper.summary = None  # it described the old text",
+           "pass"),
+    Mutant("M37", "app/services/pdf.py", "Token estimate rounds up (ceil(len/3))",
+           "return math.ceil(len(text) / CHARS_PER_TOKEN)",
+           "return len(text) // CHARS_PER_TOKEN"),
+    Mutant("M38", "app/services/metadata.py", "Lookups only accept near-identical titles (≥0.9)",
+           "TITLE_MATCH_THRESHOLD = 0.9",
+           "TITLE_MATCH_THRESHOLD = 0.5"),
+    # --- LLM provider selection ---------------------------------------------------------
+    Mutant("M39", "app/services/llm.py", "LLM_PROVIDER picks the default provider when it has a key",
+           "if settings.llm_provider in providers:",
+           "if False:"),
+    Mutant("M40", "app/services/llm.py", "LLM JSON that isn't an object is rejected",
+           "if not isinstance(data, dict):",
+           "if False:"),
+]
