@@ -16,6 +16,7 @@ from app.models import ChatMessage
 from app.services import embeddings
 from app.services.embeddings import EmbeddingError, FastEmbedder
 
+from tests_hw2.conftest import REAL_GET_EMBEDDER
 from tests_hw2.helpers import add_paper
 
 # ----------------------------------------------------------------------- schema upgrade
@@ -132,5 +133,7 @@ def test_fast_embedder_runtime_failure_is_an_embedding_error(fake_fastembed):
 
 
 def test_default_embedder_matches_the_stored_vector_size():
-    assert isinstance(embeddings._embedder, FastEmbedder)
-    assert embeddings._embedder.dim == 384  # bge-small-en-v1.5
+    embedder = REAL_GET_EMBEDDER()  # the app's own get_embedder, which the suite otherwise replaces
+    assert isinstance(embedder, FastEmbedder)
+    assert embedder.dim == 384  # bge-small-en-v1.5
+    assert REAL_GET_EMBEDDER() is embedder  # one shared model per process

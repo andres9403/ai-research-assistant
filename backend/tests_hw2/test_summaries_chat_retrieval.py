@@ -95,11 +95,20 @@ def excerpts(n):
 
 
 @pytest.mark.parametrize(
-    "group, numbers",
-    [("2", [2]), ("1, 3", [1, 3]), ("2-4", [2, 3, 4]), ("2–4; 6", [2, 3, 4, 6]), ("4-2", [4]), ("1-50", [1])],
+    "marker, cited",
+    [
+        ("[2]", [2]),
+        ("[1, 3]", [1, 3]),
+        ("[2-4]", [2, 3, 4]),
+        ("[2\u20134; 6]", [2, 3, 4, 6]),  # en dash and semicolon
+        ("[4-2]", [4]),  # a backwards range is read as its first number
+        ("[1-10]", list(range(1, 11))),  # ranges spanning up to ten excerpts are expanded
+        ("[1-11]", [1]),  # wider "ranges" are more likely reference numbers: only the first counts
+    ],
 )
-def test_citation_number_groups(group, numbers):
-    assert chat._numbers(group) == numbers
+def test_citation_marker_forms(marker, cited):
+    _, citations = chat.cite(f"Claim {marker}.", excerpts(12))
+    assert [c["chunk_id"] - 99 for c in citations] == cited  # excerpt n has chunk_id 99 + n
 
 
 def test_cite_renumbers_in_order_of_first_use():
@@ -114,14 +123,6 @@ def test_cite_drops_markers_that_point_at_no_excerpt():
     text, citations = chat.cite("Out of range [7]. Zero [0]. Good [2].", excerpts(2))
     assert text == "Out of range. Zero. Good [1]."
     assert [c["chunk_id"] for c in citations] == [101]
-
-
-def test_cite_without_markers():
-    assert chat.cite("No markers at all.", excerpts(2)) == ("No markers at all.", [])
-
-
-def test_strip_citations():
-    assert chat.strip_citations("A [1] and B [2, 3].") == "A and B."
 
 
 # ----------------------------------------------------------------------- history
@@ -143,6 +144,18 @@ def test_history_drops_turns_beyond_token_budget():
     long = "x" * (chat.HISTORY_BUDGET_TOKENS * 3)  # one message fills the budget
     paper.messages = [msg("user", "old q"), msg("assistant", long), msg("user", "new q"), msg("assistant", "short")]
     assert [m.content for m in chat.history(paper)] == ["new q", "short"]
+
+
+@pytest.mark.parametrize(
+    "answer_tokens, background_tokens, kept",
+    [(1498, 0, 2), (1499, 0, 0), (1400, 98, 2), (1400, 99, 0)],
+)
+def test_history_budget_is_inclusive_and_counts_background(answer_tokens, background_tokens, kept):
+    paper = Paper(title="t")
+    question = msg("user", "abcd")  # 2 tokens
+    paper.messages = [question, msg("assistant", "x" * 3 * answer_tokens, background="y" * 3 * background_tokens or None)]
+    # 2 + answer + background tokens must not exceed HISTORY_BUDGET_TOKENS (1500)
+    assert len(chat.history(paper)) == kept
 
 
 def test_history_never_starts_with_an_answer():
@@ -195,12 +208,26 @@ def test_retrieve_returns_anchors_plus_best_matches_in_paper_order(session, fake
     assert all(c.embedding is not None for c in paper.chunks)  # embedded on first use
 
 
-def test_retrieve_respects_the_token_budget(session):
-    big = "word " * 600  # ~1000 tokens each
-    paper = add_ready_paper(session, sections=[("Abstract", big), ("A", big), ("B", big), ("C", big)])
-    found = retrieval.retrieve(session, paper, ["word"], budget=2500)
-    assert sum(r.chunk.n_tokens for r in found) <= 2500
-    assert len(found) == 2
+@pytest.mark.parametrize(
+    "budget, sections",
+    [(2000, ["Abstract", "A"]), (1999, ["Abstract"]), (1000, ["Abstract"]), (999, [])],
+)
+def test_retrieve_token_budget_is_inclusive(session, budget, sections):
+    # 1,000 tokens each; the abstract is unlike the question, so only its anchor role brings it in
+    paper = add_ready_paper(session, sections=[("Abstract", "alpha " * 500), ("A", "word " * 600),
+                                               ("B", "word " * 600), ("C", "word " * 600)])
+    found = retrieval.retrieve(session, paper, ["word"], budget=budget)
+    assert [r.chunk.section for r in found][:1] == sections[:1]
+    assert len(found) == len(sections)
+    assert sum(r.chunk.n_tokens for r in found) <= budget
+
+
+def test_retrieve_takes_top_k_chunks_besides_the_anchors(session):
+    sections = [("Abstract", "summary of the work")] + [(f"Part {i}", f"detail number {i}") for i in range(10)]
+    paper = add_ready_paper(session, sections=sections)
+    found = retrieval.retrieve(session, paper, ["detail"])
+    assert len(found) == 7  # the abstract anchor plus the top six (TOP_K)
+    assert found[0].chunk.section == "Abstract"
 
 
 def test_retrieve_with_no_chunks_or_queries(session):

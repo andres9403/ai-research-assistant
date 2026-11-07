@@ -19,7 +19,6 @@ from app.services.pipeline import DownloadError, fetch_pdf
 
 from tests_hw2.helpers import (
     PAPER_TITLE,
-    FakeLLM,
     add_paper,
     add_ready_paper,
     build_pdf,
@@ -54,17 +53,25 @@ def upload(client, data, filename="paper.pdf", **form):
     return client.post("/api/papers/upload", files={"file": (filename, data, "application/pdf")}, data=form)
 
 
+def pdf_with_doi_and_year() -> bytes:
+    return paper_pdf(extra_first_page=[("Published in 2019. doi: 10.1145/12345.67890", 9, False)])
+
+
 # ----------------------------------------------------------------------- upload
 
 
 def test_upload_creates_a_ready_paper_with_extracted_metadata(client, session, offline_lookups, fake_embedder):
-    data = paper_pdf()
+    data = pdf_with_doi_and_year()
     response = upload(client, data)
     assert response.status_code == 201
     body = response.json()
     assert body["source"] == "upload"
+    # the four fields an upload must show, like a search result
     assert body["title"] == PAPER_TITLE
     assert body["authors"] == ["Alice Smith", "Bob Jones"]
+    assert body["year"] == 2019
+    assert body["abstract"].startswith("We study widgets in detail")
+    assert body["doi"] == "10.1145/12345.67890"
     assert body["status"] == "ready"
     assert body["has_pdf"] is True
     assert body["page_count"] == 2
@@ -109,6 +116,23 @@ def test_upload_uses_llm_for_metadata_when_configured(client, offline_lookups, f
     assert body["title"] == "LLM Corrected Title"
     assert body["authors"] == ["Real Author"]
     assert body["metadata_source"] == "llm"
+    # the metadata pass reads the first page only, never the whole paper
+    [call] = fake_llm.calls
+    assert "We study widgets in detail" in call["prompt"]  # page 1
+    assert "widgets improve accuracy" not in call["prompt"]  # page 2
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="SUSPECTED BUG: the footnote-mark filter used on titles (metadata.FOOTNOTE_MARKS) deletes digits "
+    "that follow letters, so model names in a heuristic title are mangled: 'YOLOv3: ...' becomes "
+    "'YOLOv: ...' and 'ResNet50' loses its digits. Footnote marks are only meant to go from author names.",
+)
+@pytest.mark.parametrize("title", ["YOLOv3: An Incremental Improvement", "ResNet50 Features for Widget Detection"])
+def test_upload_keeps_model_names_in_a_heuristic_title(client, offline_lookups, title):
+    body = upload(client, paper_pdf(title=title)).json()  # no LLM, lookups find nothing
+    assert body["metadata_source"] == "pdf"
+    assert body["title"] == title
 
 
 def test_upload_survives_a_failing_llm(client, offline_lookups, fake_llm):
@@ -118,22 +142,18 @@ def test_upload_survives_a_failing_llm(client, offline_lookups, fake_llm):
     assert response.json()["title"] == PAPER_TITLE
 
 
-def test_upload_title_falls_back_to_filename(client, offline_lookups):
-    response = upload(client, scanned_like_pdf(), filename="my_great-paper v2.pdf")
+@pytest.mark.parametrize(
+    "filename, expected",
+    [("my_great-paper v2.pdf", "my great-paper v2"), ("a__b_c.pdf", "a b c"), ("  .pdf", "Untitled paper")],
+)
+def test_upload_without_extractable_title_falls_back_to_filename(client, offline_lookups, filename, expected):
+    response = upload(client, scanned_like_pdf(), filename=filename)
     assert response.status_code == 201
     body = response.json()
-    assert body["title"] == "my great-paper v2"
+    assert body["title"] == expected
     assert body["status"] == "failed"
     assert "OCR" in body["status_detail"]
     assert body["has_pdf"] is True
-
-
-@pytest.mark.parametrize(
-    "filename, expected",
-    [("a_b_c.pdf", "a b c"), ("  .pdf", "Untitled paper"), (None, "Untitled paper"), ("x/y/deep_net.pdf", "deep net")],
-)
-def test_title_from_filename(filename, expected):
-    assert pipeline._title_from_filename(filename) == expected
 
 
 @pytest.mark.parametrize(
@@ -162,11 +182,15 @@ def test_upload_rejects_empty_file(client, offline_lookups):
     assert response.json()["detail"] == "The uploaded file is empty"
 
 
-def test_upload_rejects_oversized_file(client, offline_lookups, monkeypatch):
-    monkeypatch.setattr(upload_router, "MAX_PDF_BYTES", 1024 * 1024)
-    response = upload(client, b"%PDF-" + b"x" * (1024 * 1024))
-    assert response.status_code == 413
-    assert response.json()["detail"] == "PDFs are limited to 1 MB"
+def test_upload_size_cap_is_inclusive(client, offline_lookups, monkeypatch):
+    limit = 1024 * 1024
+    monkeypatch.setattr(upload_router, "MAX_PDF_BYTES", limit)
+    over = upload(client, b"%PDF-" + b"x" * (limit - 4))  # limit + 1 bytes
+    assert over.status_code == 413
+    assert over.json()["detail"] == "PDFs are limited to 1 MB"
+    at_limit = upload(client, b"%PDF-" + b"x" * (limit - 5))  # exactly the limit: passes the size check
+    assert at_limit.status_code == 422
+    assert at_limit.json()["detail"] == "PDF could not be read"
 
 
 def test_upload_requires_a_file(client, session):
@@ -251,10 +275,6 @@ def attach(client, paper_id, data, **form):
     return client.post(f"/api/papers/{paper_id}/pdf", files={"file": ("p.pdf", data, "application/pdf")}, data=form)
 
 
-def pdf_with_doi_and_year() -> bytes:
-    return paper_pdf(extra_first_page=[("Published in 2019. doi: 10.1145/12345.67890", 9, False)])
-
-
 def test_attach_fills_blank_fields_from_the_pdf(client, session):
     paper = add_paper(session, title="My Own Title", authors=[], year=None, abstract=None, doi=None)
     response = attach(client, paper.id, pdf_with_doi_and_year())
@@ -330,13 +350,6 @@ def test_attach_to_missing_paper_is_404(client, session):
     assert list(settings.pdf_dir.iterdir()) == []
 
 
-def test_scanned_pdf_marks_paper_failed(client, session):
-    paper = add_paper(session)
-    body = attach(client, paper.id, scanned_like_pdf()).json()
-    assert body["status"] == "failed"
-    assert body["has_pdf"] is True
-
-
 # ----------------------------------------------------------------------- open-access download
 
 
@@ -357,7 +370,7 @@ def download_server(monkeypatch):
     return routes, seen
 
 
-def test_saving_a_paper_with_pdf_url_downloads_and_processes_it(client, download_server):
+def test_saving_a_paper_with_pdf_url_downloads_and_processes_it(client, session, download_server):
     routes, seen = download_server
     routes["https://oa.example.org/widgets.pdf"] = httpx.Response(200, content=paper_pdf())
     response = client.post(
@@ -370,6 +383,8 @@ def test_saving_a_paper_with_pdf_url_downloads_and_processes_it(client, download
     assert paper["has_pdf"] is True
     assert paper["page_count"] == 2
     assert seen == ["https://oa.example.org/widgets.pdf"]
+    stored = session.query(Chunk).filter_by(paper_id=paper["id"]).all()
+    assert stored and all(c.embedding is not None for c in stored)  # embedded, ready for Q&A
 
 
 @pytest.mark.parametrize(
@@ -468,10 +483,11 @@ def test_download_task_ignores_papers_not_queued(session, download_server):
 
 @pytest.mark.xfail(
     strict=True,
-    reason="SUSPECTED BUG: retrying the open-access download (POST /pdf/fetch) for a paper that is already "
-    "processed and ready is allowed, and if that retry fails download_pdf sets status='no_pdf' although the "
-    "stored PDF and chunks are untouched, so has_pdf is true but summary/Q&A answer 409 'full text isn't "
-    "available'. recover_interrupted() shows the intended rule: a paper with chunks stays 'ready'.",
+    reason="SUSPECTED BUG (API-level only): POST /pdf/fetch is accepted for a paper that is already processed "
+    "and ready, and if that retry fails download_pdf sets status='no_pdf' although the stored PDF and chunks "
+    "are untouched, so has_pdf is true but summary/Q&A answer 409 'full text isn't available'. "
+    "recover_interrupted() shows the intended rule: a paper with chunks stays 'ready'. The frontend only shows "
+    "the 'Download open-access PDF' button when has_pdf is false, so users reach this through the API only.",
 )
 def test_failed_retry_keeps_an_already_processed_paper_ready(client, session, download_server):
     routes, _ = download_server
@@ -493,11 +509,12 @@ def test_fetch_pdf_rejects_non_http_urls_without_a_request():
             fetch_pdf(mock_client(handler), url)
 
 
-def test_fetch_pdf_enforces_the_size_limit(monkeypatch):
+def test_fetch_pdf_size_cap_is_inclusive(monkeypatch):
     monkeypatch.setattr(pipeline, "MAX_PDF_BYTES", 1000)
-    client = mock_client(lambda r: httpx.Response(200, content=b"%PDF-" + b"x" * 2000))
+    at_limit = b"%PDF-" + b"x" * 995
+    assert fetch_pdf(mock_client(lambda r: httpx.Response(200, content=at_limit)), "https://e.org/a.pdf") == at_limit
     with pytest.raises(DownloadError, match="larger than"):
-        fetch_pdf(client, "https://example.org/big.pdf")
+        fetch_pdf(mock_client(lambda r: httpx.Response(200, content=at_limit + b"x")), "https://e.org/b.pdf")
 
 
 def test_fetch_pdf_follows_redirects_and_returns_bytes():
@@ -534,32 +551,6 @@ def test_public_addresses_blocks_private_and_mixed_hosts(monkeypatch, addresses)
         public_addresses("internal.example", 80)
 
 
-def test_download_backend_refuses_loopback_before_connecting(monkeypatch):
-    connects = []
-    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", lambda self, host, port, *a, **k: connects.append(host))
-    monkeypatch.setattr(socket, "getaddrinfo", fake_resolver(["127.0.0.1"]))
-    with pytest.raises(BlockedAddress):
-        http.PublicNetworkBackend().connect_tcp("localhost", 8000)
-    assert connects == []
-
-
-def test_download_backend_connects_to_the_checked_ip(monkeypatch):
-    connects = []
-    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", lambda self, host, port, *a, **k: connects.append(host) or "stream")
-    monkeypatch.setattr(socket, "getaddrinfo", fake_resolver(["93.184.216.34"]))
-    assert http.PublicNetworkBackend().connect_tcp("example.org", 443) == "stream"
-    assert connects == ["93.184.216.34"]  # the validated address, not the name
-
-
-def test_unresolvable_host_is_a_connect_error(monkeypatch):
-    def fail(*args, **kwargs):
-        raise socket.gaierror("Name or service not known")
-
-    monkeypatch.setattr(socket, "getaddrinfo", fail)
-    with pytest.raises(httpcore.ConnectError, match="not known"):
-        public_addresses("no-such-host.invalid", 443)
-
-
 def test_download_backend_tries_each_public_address_then_gives_up(monkeypatch):
     tried = []
 
@@ -581,10 +572,31 @@ def test_download_backend_tries_each_public_address_then_gives_up(monkeypatch):
     assert tried == ["93.184.216.34", "93.184.216.36"]
 
 
-def test_download_client_ignores_proxy_settings():
+@pytest.mark.parametrize("address", ["127.0.0.1", "10.0.0.5", "169.254.169.254"])
+def test_download_client_refuses_private_destinations_before_connecting(stubbed_sockets, address):
+    stubbed_sockets["dns"]["files.example.org"] = [address]
     with http.make_download_client() as client:
-        assert client._trust_env is False
-        assert isinstance(client._transport, http.PublicOnlyTransport)
+        with pytest.raises(DownloadError, match="private or local network address"):
+            fetch_pdf(client, "http://files.example.org/paper.pdf")
+    assert stubbed_sockets["connects"] == []
+
+
+def test_download_client_connects_directly_to_the_checked_ip_ignoring_proxies(stubbed_sockets, monkeypatch):
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
+        monkeypatch.setenv(var, "http://proxy.internal:3128")
+    stubbed_sockets["dns"]["files.example.org"] = ["93.184.216.34"]
+    with http.make_download_client() as client:
+        with pytest.raises(DownloadError, match=r"the download failed \(ConnectError\)"):
+            fetch_pdf(client, "http://files.example.org/paper.pdf")
+    # the validated address itself, not the hostname (a second DNS answer can't swap it) and not the proxy
+    assert stubbed_sockets["connects"] == [("93.184.216.34", 80)]
+
+
+def test_download_of_an_unresolvable_host_is_a_download_error(stubbed_sockets):
+    with http.make_download_client() as client:
+        with pytest.raises(DownloadError, match=r"the download failed \(ConnectError\)"):
+            fetch_pdf(client, "https://no-such-host.example/paper.pdf")
+    assert stubbed_sockets["connects"] == []
 
 
 # ----------------------------------------------------------------------- startup recovery

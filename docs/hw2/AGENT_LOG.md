@@ -66,3 +66,76 @@ REVIEW FINDINGS (test correctness / assertion strength):
 
 Goal: stronger, behaviour-focused assertions and coverage of the important missing paths — not test count. Don't add assertions that only exist to execute lines. Keep the 4 strict xfails. When done, report: what you changed per file and why, the new pytest result line, and anything you still chose not to cover.
 ```
+
+**Agent result (summary of its report):** `375 passed, 4 xfailed in 2.95s`; coverage
+96% → 99%. Split the misleading attach test into "fills blank fields" and "never
+overwrites existing fields"; error-path tests in `test_ai_api.py`, `test_papers_api.py`,
+`test_settings_api.py` and the upload/attach tests now assert no side effects (no
+message/summary saved, LLM not called, `.env` not written, PDF/chunks untouched). New
+`test_app_infrastructure.py` (old-schema migration, frontend serving, FastEmbedder with
+a stand-in `fastembed` module). New tests for the download guard's DNS/fallback paths,
+upload rollback on `OSError`, embedding-failure fallbacks, OpenAI error mapping. It also
+found and fixed two of its own tests that passed for the wrong reason (an Ollama
+"by name" test hitting the generic no-LLM path; a chunk-merge test whose input never
+triggered a merge).
+
+## Round 2 — mutation feedback + bug triage + requirements audit (2026-11-07)
+
+Strategy: a different kind of context from Round 1. (A) mutation-testing results for
+the 2 surviving seeded faults, framed as "fix the class of weakness"; (B) human triage
+of the agent's suspected bugs, confirming them and adding a fifth it had noticed but not
+tested; (C) a requirements-traceability audit against `docs/PLANNING.md`; (D) a
+maintainability pass (private-helper coupling, redundant tests). Before sending it, an
+extra held-out set of 18 seeded faults was written and **never shown to the agent**, to
+detect overfitting to the 40 it was told about.
+
+**Prompt (verbatim):**
+
+```text
+Round 2 of test improvement — a different kind of feedback this time: mutation-testing results, triage of the bugs you reported, and a requirements audit. Same constraints as before (only edit backend/tests_hw2/, don't read backend/tests/, don't touch backend/app/, don't commit, mock all network/LLM).
+
+A. MUTATION TESTING FEEDBACK. We seeded 40 single-line faults into backend/app (each one breaks a stated requirement) and ran your current suite against each; it detected 38. These two mutants SURVIVED (all tests still passed):
+  - app/services/library.py, list_papers():  `stmt.where(Paper.year <= year_to)`  →  `stmt.where(Paper.year < year_to)`
+  - app/services/metadata.py:  `TITLE_MATCH_THRESHOLD = 0.9`  →  `TITLE_MATCH_THRESHOLD = 0.5`
+Don't just write a test aimed at each exact mutation: work out what weakness in the suite let each survive (what kind of input your tests never use) and fix that class of weakness across the suite, wherever the same blind spot appears (e.g. other range filters, limits, size caps, budgets, thresholds).
+
+B. BUG TRIAGE (I checked each of your xfails against the code and the UI):
+  1. normalize_doi "doi: 10.x" — confirmed real bug. Keep the strict xfail.
+  2. Whitespace-only title accepted by POST /api/papers — confirmed real (inconsistent with the edit rule). Keep.
+  3. split_sections late-first-heading branch is dead (front matter always has page_start=1) — confirmed real. Keep.
+  4. Failed retry demotes a ready paper to no_pdf — confirmed real at the API level, but note the frontend only shows the "Download open-access PDF" button when has_pdf is false, so a user can only reach it via the API. Keep the xfail and make its reason say that.
+  5. The footnote-mark stripping you mentioned but didn't test: I confirmed `_clean_title("YOLOv3: An Incremental Improvement")` returns "YOLOv: An Incremental Improvement" and "ResNet50" loses its digits. Footnote marks on author names are intended; mangling model names in titles is not. Add a strict xfail that shows this through the public behaviour (a PDF upload whose heuristic title contains a model name like YOLOv3, with no LLM and offline lookups), not by calling the private helper.
+
+C. REQUIREMENTS AUDIT. Re-read docs/PLANNING.md (the design decisions and milestone acceptance criteria). For each user-visible requirement it states, check there is a test that would fail if it were broken. Add tests for any requirement without one; if a requirement can't be tested here, say why in your report.
+
+D. MAINTAINABILITY. Your tests call private helpers in a few places (llm._parse, chat._numbers, pdf._normalize, metadata._split_names / _looks_like_name / _clean_title, pipeline._title_from_filename, client._transport / _trust_env). Where the same behaviour can be checked through a public function or the API, switch to that; keep a private call only when there's no reasonable public route, and say which ones you kept. Also remove tests that are redundant with another test (same behaviour, same input class).
+
+Quality over quantity: removing or merging tests is fine if the suite still catches the same faults. When done, report: what you changed under A–D (with test names), the new pytest result line, and the tests you deleted or merged and why.
+```
+
+**Agent result (summary of its report):** `433 passed, 6 xfailed in 3.57s`; coverage
+stays at 99%. (A) It diagnosed both survivors as one blind spot, "inputs well inside or
+well outside a limit, never at it", and added at-the-limit tests across the suite (year
+ranges, query/author/venue length limits, the three 50 MB size caps, chunk target and
+minimum sizes, heading length and font-size cut-offs, retrieval/summary/history token
+budgets, title-similarity threshold at 0.903 vs 0.889, key length 19/20/400, search
+limit 1/50, PATCH year bounds). It seeded 24 extra boundary faults itself in a scratch
+copy to check them, which exposed two more of its own weak tests (one asserted
+`1 + retrieval.TOP_K`, so it moved with the mutation). (B) It updated bug 4's reason and
+added a strict xfail for the "YOLOv3" title bug through the upload API. (C) Its PLANNING.md
+audit added tests for 13 untested requirements, e.g. that the library survives a
+restart, that the summary sends ≤ 8k tokens and Q&A ≤ 3k tokens of the paper, that keys
+are never logged, and that a saved key works without a restart. It listed the
+requirements it could not test (real providers, UI, start scripts). (D) It replaced 12 of
+13 private-helper references with public routes (end-to-end download-client tests with a
+fake DNS/socket layer; ligature extraction through a real PDF with ligature glyphs) and
+deleted or merged 24 redundant tests.
+
+## Manual interventions
+
+None in the test code: every line in `backend/tests_hw2/` was written by the generator
+agent. The evaluation harness in `backend/hw2_eval/` was written by the orchestrating
+Claude Code session and never shown to the generator. The
+human-side work was: writing the prompts; running coverage and the mutation harness;
+checking each suspected bug against the code and the UI (Round 2, part B); and spotting
+the fifth bug (it was in the agent's report but untested) and confirming it by hand.

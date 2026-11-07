@@ -183,8 +183,24 @@ def test_list_papers_escapes_like_wildcards(session, library_papers):
     assert library.list_papers(session, q="_") == []
 
 
-def test_list_papers_filters_by_source_and_year(session, library_papers):
+def test_list_papers_filters_by_source(session, library_papers):
     assert [p.title for p in library.list_papers(session, source="arxiv")] == ["Transformers at 100% scale"]
-    assert [p.title for p in library.list_papers(session, year_from=2019)] == ["Transformers at 100% scale"]
-    assert [p.title for p in library.list_papers(session, year_to=2019)] == ["Graph Networks"]
-    assert library.list_papers(session, year_from=2022, year_to=2010) == []
+    assert library.list_papers(session, source="nowhere") == []
+
+
+@pytest.mark.parametrize(
+    "year_from, year_to, expected",
+    [
+        (2018, None, ["Transformers at 100% scale", "Graph Networks"]),  # lower bound is inclusive
+        (2019, None, ["Transformers at 100% scale"]),
+        (None, 2021, ["Transformers at 100% scale", "Graph Networks"]),  # upper bound is inclusive
+        (None, 2020, ["Graph Networks"]),
+        (2021, 2021, ["Transformers at 100% scale"]),  # a single year
+        (2018, 2018, ["Graph Networks"]),
+        (2022, 2010, []),  # an inverted range matches nothing
+    ],
+)
+def test_list_papers_year_range_is_inclusive_and_skips_undated_papers(session, library_papers, year_from, year_to,
+                                                                       expected):
+    found = [p.title for p in library.list_papers(session, year_from=year_from, year_to=year_to)]
+    assert found == expected  # "Upload Study" has no year, so any year filter leaves it out

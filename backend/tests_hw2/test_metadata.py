@@ -5,7 +5,6 @@ from datetime import date
 import httpx
 import pytest
 
-from app.services import metadata
 from app.services.llm import LLMError
 from app.services.metadata import (
     ExtractedMetadata,
@@ -50,8 +49,10 @@ def test_heuristics_find_doi_and_arxiv_id_and_year():
 
 def test_year_is_latest_plausible_year_on_the_first_page():
     next_year = date.today().year + 1
-    data = paper_pdf(extra_first_page=[(f"Published 2019, revised 2020, embargo until {next_year + 5}.", 9, False)])
-    assert extract_metadata(extract(data)).year == 2020
+    data = paper_pdf(extra_first_page=[(f"Published 2019, revised 2020, embargo until {next_year + 1}.", 9, False)])
+    assert extract_metadata(extract(data)).year == 2020  # two years ahead is not a publication year
+    data = paper_pdf(extra_first_page=[(f"Published 2019, to appear {next_year}.", 9, False)])
+    assert extract_metadata(extract(data)).year == next_year  # next year is (forthcoming papers)
 
 
 def test_embedded_title_is_used_only_when_the_page_confirms_it():
@@ -66,37 +67,27 @@ def test_embedded_title_is_used_only_when_the_page_confirms_it():
 
 
 @pytest.mark.parametrize(
-    "name, ok",
+    "authors, expected",
     [
-        ("Ada Lovelace", True),
-        ("Ludwig van Beethoven", True),
-        ("J. R. R. Tolkien", True),
-        ("Madonna", False),  # one word
-        ("deep learning methods", False),  # not capitalised
-        ("Table 3 Results", False),  # digits
-        ("A B C D E F", False),  # too many words
+        ("Ann Lee*, Bo Kim\u2020 and Cy Dee1 & Di Fox", ["Ann Lee", "Bo Kim", "Cy Dee", "Di Fox"]),  # footnote marks
+        ("Ludwig van Beethoven; J. R. R. Tolkien", ["Ludwig van Beethoven", "J. R. R. Tolkien"]),  # particles, initials
+        # single words, lowercase phrases, digits and over-long runs are not names
+        ("Madonna, deep learning methods, Table 3 Results, A B C D E F, Ada Lovelace", ["Ada Lovelace"]),
     ],
 )
-def test_looks_like_name(name, ok):
-    assert metadata._looks_like_name(name) is ok
+def test_author_names_are_recognised_on_the_first_page(authors, expected):
+    meta = extract_metadata(extract(paper_pdf(authors=authors, html=True)))
+    assert meta.authors == expected
 
 
-def test_split_names_handles_separators_and_footnote_marks():
-    assert metadata._split_names("Ann Lee*, Bo Kim† and Cy Dee1 & Di Fox") == ["Ann Lee", "Bo Kim", "Cy Dee", "Di Fox"]
+def test_footnote_marks_are_removed_from_a_heuristic_title():
+    meta = extract_metadata(extract(paper_pdf(title="Robust Widgets*\u2020", html=True)))
+    assert meta.title == "Robust Widgets"
 
 
-@pytest.mark.parametrize(
-    "text, expected",
-    [
-        ("A Good Title For A Paper", "A Good Title For A Paper"),
-        ("Short", None),
-        ("draft_version.pdf", None),
-        ("Untitled document here", None),
-        ("Robust Widgets*†", "Robust Widgets"),
-    ],
-)
-def test_clean_title(text, expected):
-    assert metadata._clean_title(text) == expected
+def test_too_short_title_is_not_used():
+    meta = extract_metadata(extract(paper_pdf(title="Short")))
+    assert meta.title is None  # the upload then falls back to the filename
 
 
 # ----------------------------------------------------------------------- LLM pass
@@ -133,6 +124,24 @@ def test_llm_metadata_keeps_exact_fields_and_rejects_bad_values():
     assert meta.doi == "10.1/x"
     assert meta.source == "pdf"  # nothing changed
     assert "abstract" not in provider.calls[0]["schema"]["properties"]
+
+
+@pytest.mark.parametrize(
+    "llm_year, kept",
+    [(1900, True), (1899, False), (date.today().year + 1, True), (date.today().year + 2, False), (0, False)],
+)
+def test_llm_year_must_be_plausible(llm_year, kept):
+    provider = FakeLLM(responses=[{"title": "Heuristic Title Guess", "authors": ["Wrong Name"], "year": llm_year}])
+    meta = llm_metadata(provider, extract(paper_pdf()), heuristic_meta(year=2018, abstract="Known."))
+    assert meta.year == (llm_year if kept else 2018)
+
+
+@pytest.mark.parametrize("length, kept", [(7, False), (8, True), (300, True), (301, False)])
+def test_llm_title_length_limits(length, kept):
+    title = "T" + "x" * (length - 1)
+    provider = FakeLLM(responses=[{"title": title, "authors": ["Wrong Name"], "year": 2018}])
+    meta = llm_metadata(provider, extract(paper_pdf()), heuristic_meta(abstract="Known."))
+    assert meta.title == (title if kept else "Heuristic Title Guess")
 
 
 def test_llm_metadata_does_not_override_arxiv_year():
@@ -196,16 +205,29 @@ def test_semantic_scholar_lookup_tries_arxiv_id_after_doi_404():
     assert [("DOI:" in u, "arXiv:" in u) for u in seen] == [(True, False), (False, True)]
 
 
-def test_semantic_scholar_title_match_needs_a_similar_title():
-    close = json_response({"data": [{**S2_RECORD, "title": "Deep Widgets For Robust Testing."}]})
-    handler, _ = recorder([("search/match", close)])
-    meta = lookup_semantic_scholar(mock_client(handler), heuristic_meta(title="Deep widgets for robust testing"))
-    assert meta.source == "semantic_scholar_title"
+# Candidate titles around the 0.9 similarity threshold for "Deep widgets for robust testing":
+# a title search only finds the most similar paper, so a near miss must not be taken as a match.
+TITLE_CANDIDATES = [
+    ("Deep Widgets For Robust Testing.", True),  # same title, case and punctuation aside (1.0)
+    ("Deep widgets for robust testers", True),  # ~0.90
+    ("Deep widgets for robust training", False),  # ~0.89: a different paper
+    ("Shallow widgets for robust testing", False),  # ~0.83
+    ("Widgets for robust software testing", False),  # ~0.79
+    ("Something Entirely Different", False),
+]
 
-    far = json_response({"data": [{**S2_RECORD, "title": "Something Entirely Different"}]})
-    handler, _ = recorder([("search/match", far)])
+
+@pytest.mark.parametrize("candidate, accepted", TITLE_CANDIDATES)
+def test_semantic_scholar_title_match_needs_a_near_identical_title(candidate, accepted):
+    reply = json_response({"data": [{**S2_RECORD, "title": candidate}]})
+    handler, _ = recorder([("search/match", reply)])
     original = heuristic_meta(title="Deep widgets for robust testing")
-    assert lookup_semantic_scholar(mock_client(handler), original) is original
+    meta = lookup_semantic_scholar(mock_client(handler), original)
+    if accepted:
+        assert meta.source == "semantic_scholar_title"
+        assert meta.external_id == "s2-xyz"
+    else:
+        assert meta is original
 
 
 @pytest.mark.parametrize("failure", [httpx.Response(429), httpx.Response(500), httpx.ConnectError("offline")])
@@ -230,13 +252,26 @@ def test_arxiv_lookup_by_id_and_by_title():
     assert by_title.year == 2022
 
 
-def test_arxiv_lookup_rejects_dissimilar_titles_and_errors():
-    feed = arxiv_feed([{"id": "1111.11111", "title": "Unrelated Work On Cats"}])
+@pytest.mark.parametrize("candidate, accepted", TITLE_CANDIDATES)
+def test_arxiv_title_lookup_needs_a_near_identical_title(candidate, accepted):
+    feed = arxiv_feed([{"id": "1111.11111", "title": candidate}])
     handler, _ = recorder([("export.arxiv.org", httpx.Response(200, text=feed))])
     original = heuristic_meta(title="Deep widgets for robust testing")
-    assert lookup_arxiv(mock_client(handler), original) is original
+    meta = lookup_arxiv(mock_client(handler), original)
+    assert (meta.source == "arxiv_title") if accepted else (meta is original)
 
+
+def test_arxiv_lookup_picks_the_most_similar_candidate():
+    feed = arxiv_feed([{"id": "1111.11111", "title": "Deep widgets for robust training"},
+                       {"id": "2222.22222", "title": "Deep Widgets for Robust Testing"}])
+    handler, _ = recorder([("export.arxiv.org", httpx.Response(200, text=feed))])
+    meta = lookup_arxiv(mock_client(handler), heuristic_meta(title="Deep widgets for robust testing"))
+    assert meta.external_id == "2222.22222"
+
+
+def test_arxiv_lookup_survives_malformed_xml():
     handler, _ = recorder([("export.arxiv.org", httpx.Response(200, text="<not xml"))])
+    original = heuristic_meta(title="Deep widgets for robust testing")
     assert lookup_arxiv(mock_client(handler), original) is original
 
 

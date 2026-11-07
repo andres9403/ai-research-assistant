@@ -20,7 +20,7 @@ from app.services.pdf import (
     split_sections,
 )
 
-from tests_hw2.helpers import build_pdf, encrypted_pdf, paper_pdf, scanned_like_pdf, sentence_block
+from tests_hw2.helpers import build_pdf, paper_pdf, sentence_block
 
 
 def line(text, page=0, size=10.0, bold=False, block=0, y0=300.0, y1=310.0, height=800.0):
@@ -30,25 +30,16 @@ def line(text, page=0, size=10.0, bold=False, block=0, y0=300.0, y1=310.0, heigh
 # ----------------------------------------------------------------------- open_pdf
 
 
-def test_open_pdf_rejects_non_pdf_bytes():
-    with pytest.raises(PdfError, match="not a PDF"):
-        open_pdf(b"hello, I am a text file")
+# Non-PDF, corrupt and password-protected files are covered through the upload API
+# (test_upload_and_pipeline.py), which reports these same PdfError messages.
 
 
-def test_open_pdf_rejects_corrupt_pdf():
-    with pytest.raises(PdfError, match="could not be read"):
-        open_pdf(b"%PDF-1.7\n" + b"\x00garbage" * 10)
-
-
-def test_open_pdf_rejects_password_protected_pdf():
-    with pytest.raises(PdfError, match="password-protected"):
-        open_pdf(encrypted_pdf())
-
-
-def test_open_pdf_rejects_oversized_data(monkeypatch):
+def test_open_pdf_size_cap_is_inclusive(monkeypatch):
     monkeypatch.setattr(pdf, "MAX_PDF_BYTES", 100)
     with pytest.raises(PdfError, match="larger than"):
-        open_pdf(b"%PDF-" + b"x" * 200)
+        open_pdf(b"%PDF-" + b"x" * 96)  # 101 bytes
+    with pytest.raises(PdfError, match="could not be read"):  # 100 bytes passes the size check
+        open_pdf(b"%PDF-" + b"x" * 95)
 
 
 def test_open_pdf_accepts_a_pdf_header_after_leading_bytes():
@@ -82,14 +73,6 @@ def test_extract_reads_pdf_metadata():
     assert extract(data).pdf_metadata["title"] == "Embedded"
 
 
-def test_extract_without_text_has_no_lines_or_chunks():
-    result = extract(scanned_like_pdf())
-    assert result.page_count == 1
-    assert result.has_text is False
-    assert result.chunks == []
-    assert result.sections == []
-
-
 def test_extract_without_headings_uses_full_text_section():
     data = build_pdf([[(sentence_block("Plain prose without any headings at all.", 30), 10, False)]])
     result = extract(data)
@@ -97,9 +80,10 @@ def test_extract_without_headings_uses_full_text_section():
     assert result.chunks and all(c.section == FULL_TEXT for c in result.chunks)
 
 
-def test_text_normalisation_expands_ligatures_and_collapses_spaces():
-    # base-14 PDF fonts can't draw ligature glyphs, so this checks the normaliser directly
-    assert pdf._normalize("An eﬃcient ﬁne   method­") == "An efficient fine method"
+def test_extract_expands_ligatures_and_drops_soft_hyphens():
+    # laid out with MuPDF's HTML fonts, which draw real ligature glyphs (U+FB03, U+FB01)
+    data = build_pdf([[("Abstract", 12, True), ("An e\ufb03cient \ufb01ne\u00a0method for wid\u00adgets.", 10, False, "html")]])
+    assert [c.text for c in extract(data).chunks] == ["An efficient fine method for widgets."]
 
 
 def test_extract_merges_split_heading_spans_and_ignores_images_and_rotated_stamps():
@@ -139,9 +123,16 @@ def test_repeated_running_heads_and_page_numbers_are_removed():
     assert [l.text for l in kept] == ["Body text on page 0", "Body text on page 1", "Body text on page 2"]
 
 
-def test_single_margin_line_that_does_not_repeat_is_kept():
-    lines = [line("A unique footnote in the margin", y0=780, y1=790), line("Body")]
-    assert len(remove_headers_and_footers(lines, page_count=4)) == 2
+@pytest.mark.parametrize(
+    "page_count, pages_with_head, removed",
+    [(4, 1, False), (4, 2, True), (6, 2, False), (6, 3, True), (1, 1, False)],
+)
+def test_margin_lines_are_removed_only_when_they_repeat_on_half_the_pages(page_count, pages_with_head, removed):
+    lines = [line(f"Body {p}", page=p) for p in range(page_count)]
+    lines += [line("Proceedings of Widgets", page=p, y0=10, y1=20) for p in range(pages_with_head)]
+    kept = [l.text for l in remove_headers_and_footers(lines, page_count)]
+    assert ("Proceedings of Widgets" not in kept) is removed
+    assert [t for t in kept if t.startswith("Body")] == [f"Body {p}" for p in range(page_count)]
 
 
 # ----------------------------------------------------------------------- headings
@@ -158,11 +149,16 @@ def test_single_margin_line_that_does_not_repeat_is_kept():
         ("Conclusion", {}, None),  # plain body-size text is not a heading
         ("Results", {"bold": True}, None),  # ambiguous words need a larger font
         ("Results", {"size": 12.0}, "Results"),
+        ("Results", {"size": 10.9}, "Results"),  # 0.9pt above body size is enough
+        ("Results", {"size": 10.8}, None),
+        ("3 " + " ".join(["Alpha"] * 11), {"bold": True}, " ".join(["Alpha"] * 11)),  # 12 words
+        ("3 " + " ".join(["Alpha"] * 12), {"bold": True}, None),  # 13 words
+        ("3 Long" + "g" * 84, {"bold": True}, "Long" + "g" * 84),  # 90 characters
+        ("3 Long" + "g" * 85, {"bold": True}, None),  # 91 characters
         ("3 Our Dilated Attention", {"bold": True}, "Our Dilated Attention"),
         ("3 our dilated attention", {"bold": True}, None),
         ("3 Our Dilated Attention", {}, None),  # numbered non-standard heading needs emphasis
         ("Appendix B: Proofs", {"bold": True}, "Appendix B: Proofs"),
-        ("1 " + "word " * 20, {"bold": True}, None),  # too long
     ],
 )
 def test_heading_name(text, kwargs, expected):
@@ -221,12 +217,19 @@ def test_chunks_fill_up_to_the_target_size():
     assert chunks[1].text.split("\n\n") == [para, " ".join(["tail"] * 10)]  # paragraphs kept apart
 
 
-def test_short_tail_is_merged_into_the_previous_chunk():
-    section = Section("Method", 2, 3, [(" ".join(["body"] * 240), 2), (" ".join(["tail"] * 30), 3)])
-    [chunk] = chunk_sections([section])  # a 30-word tail is below CHUNK_MIN_WORDS, so it isn't its own chunk
-    assert len(chunk.text.split()) == 270
-    assert chunk.text.endswith("tail")
-    assert (chunk.page_start, chunk.page_end) == (2, 3)
+@pytest.mark.parametrize("first, second, sizes", [(125, 125, [250]), (125, 126, [125, 126])])
+def test_chunk_target_size_is_inclusive(first, second, sizes):
+    section = make_section("Method", [" ".join(["a"] * first), " ".join(["b"] * second)])
+    assert [len(c.text.split()) for c in chunk_sections([section])] == sizes
+
+
+@pytest.mark.parametrize("tail, sizes", [(59, [299]), (60, [240, 60])])
+def test_tail_below_the_minimum_is_merged_into_the_previous_chunk(tail, sizes):
+    section = Section("Method", 2, 3, [(" ".join(["body"] * 240), 2), (" ".join(["tail"] * tail), 3)])
+    chunks = chunk_sections([section])
+    assert [len(c.text.split()) for c in chunks] == sizes
+    assert chunks[-1].text.endswith("tail")
+    assert (chunks[-1].page_start, chunks[-1].page_end) == ((2, 3) if len(sizes) == 1 else (3, 3))
 
 
 def test_long_paragraph_is_split_at_sentences_then_words():

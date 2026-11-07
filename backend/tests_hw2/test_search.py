@@ -98,8 +98,11 @@ def test_semantic_scholar_results_are_normalised():
     assert first.source == "s2"
     assert first.external_id == "s2-1"
     assert first.doi == "10.5555/attn"
+    # what a result card shows: title, authors, year, abstract and a link
     assert first.authors == ["Ashish Vaswani", "Noam Shazeer"]
+    assert first.year == 2017
     assert first.abstract == "The dominant sequence models..."
+    assert first.url == "https://www.semanticscholar.org/paper/s2-1"
     assert first.pdf_url == "https://arxiv.org/pdf/1706.03762"  # arXiv id fills a missing OA link
     assert first.venue == "NeurIPS"
     assert first.citation_count == 100000
@@ -107,19 +110,15 @@ def test_semantic_scholar_results_are_normalised():
     assert upstream.hosts() == ["api.semanticscholar.org"]
 
 
-def test_semantic_scholar_request_carries_query_limit_and_api_key():
+def test_semantic_scholar_request_carries_query_limit_and_api_key_only_when_set():
     upstream = Upstream()
     service(upstream, key="my-key").search("graph networks", 7)
-    request = upstream.requests[0]
-    assert request.url.params["query"] == "graph networks"
-    assert request.url.params["limit"] == "7"
-    assert request.headers["x-api-key"] == "my-key"
-
-
-def test_no_api_key_header_without_a_key():
-    upstream = Upstream()
-    service(upstream).search("x", 5)
-    assert "x-api-key" not in upstream.requests[0].headers
+    service(upstream).search("graph networks", 7)
+    keyed, keyless = upstream.requests
+    assert keyed.url.params["query"] == "graph networks"
+    assert keyed.url.params["limit"] == "7"
+    assert keyed.headers["x-api-key"] == "my-key"
+    assert "x-api-key" not in keyless.headers
 
 
 def test_falls_back_to_arxiv_when_semantic_scholar_fails():
@@ -201,6 +200,14 @@ def test_author_filter_and_sorting_are_applied_locally_on_semantic_scholar():
     assert [r.citation_count for r in cited.results] == [100000, 90000]  # trimmed to the limit
 
 
+@pytest.mark.parametrize("limit, page", [(10, 100), (50, 100), (100, 100)])
+def test_local_filters_fetch_a_full_page_of_at_least_100(limit, page):
+    request = s2_request("q", limit, SearchFilters(sort="newest"))
+    assert request.params["limit"] == page
+    assert "100 most relevant matches" in request.notes[0]
+    assert s2_request("q", limit, SearchFilters()).params["limit"] == limit  # no local filtering: as asked
+
+
 def test_semantic_scholar_filters_go_upstream():
     upstream = Upstream()
     filters = SearchFilters(year_from=2015, venue="NeurIPS", publication_type="Conference", open_access=True)
@@ -237,10 +244,6 @@ def test_arxiv_request_reports_unsupported_filters():
     newest = arxiv_request("x", 5, SearchFilters(sort="newest"))
     assert newest.params["sortBy"] == "submittedDate"
     assert newest.unapplied_filters == []
-
-
-def test_arxiv_request_is_empty_for_a_query_without_words():
-    assert arxiv_request("!!! ???", 5, SearchFilters()).params == {}
 
 
 def test_wordless_query_returns_no_arxiv_results_without_querying_arxiv():
@@ -350,6 +353,28 @@ def test_search_result_can_be_saved_and_is_then_marked(client, upstream):
 def test_search_endpoint_validates_parameters(client, upstream, params):
     assert client.get("/api/search", params=params).status_code == 422
     assert upstream.requests == []
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"q": "x", "limit": 1},
+        {"q": "x", "limit": 50},
+        {"q": "x" * 300},
+        {"q": "x", "author": "a" * 100},
+        {"q": "x", "year_from": 1900, "year_to": 2100},
+        {"q": "x", "year_from": 2017, "year_to": 2017},
+        {"q": "x", "venue": "v" * 200},
+    ],
+)
+def test_search_endpoint_accepts_parameters_at_their_limits(client, upstream, params):
+    response = client.get("/api/search", params=params)
+    assert response.status_code == 200
+    sent = upstream.requests[0].url.params
+    if "limit" in params:
+        assert sent["limit"] == str(params["limit"])
+    if "year_from" in params:
+        assert sent["year"] == f"{params['year_from']}-{params['year_to']}"
 
 
 def test_search_endpoint_returns_502_when_every_provider_fails(client):

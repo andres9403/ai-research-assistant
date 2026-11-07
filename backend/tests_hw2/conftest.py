@@ -45,6 +45,12 @@ from app.services import embeddings, llm  # noqa: E402
 
 from tests_hw2.helpers import FakeEmbedder, FakeLLM  # noqa: E402
 
+import httpcore  # noqa: E402
+
+# Originals, captured before the autouse fixtures below replace them.
+REAL_GET_EMBEDDER = embeddings.get_embedder
+_REAL_HTTPX_HANDLE_REQUEST = httpx.HTTPTransport.handle_request
+
 assert str(settings.data_dir).startswith(str(_TMP_ROOT)), "tests must not use the real data directory"
 assert str(_TMP_ROOT) in settings.db_url
 
@@ -73,6 +79,30 @@ def block_network(monkeypatch):
     monkeypatch.setattr(httpx2.HTTPTransport, "handle_request", refuse_sdk)
     yield attempts
     assert not attempts, f"test tried to reach the real network: {attempts}"
+
+
+@pytest.fixture
+def stubbed_sockets(monkeypatch):
+    """Let httpx's real transport run, but stop at the socket layer: DNS answers come from
+    `state['dns']` (host -> addresses) and every TCP connect is recorded, then refused.
+    Nothing can leave the machine, since httpcore opens sockets only in connect_tcp."""
+    import socket
+
+    state = {"dns": {}, "connects": []}
+
+    def getaddrinfo(host, port, type=0, *args, **kwargs):
+        if host not in state["dns"]:
+            raise socket.gaierror(f"unknown test host {host}")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, port)) for a in state["dns"][host]]
+
+    def connect_tcp(self, host, port, *args, **kwargs):
+        state["connects"].append((host, port))
+        raise httpcore.ConnectError(f"test refused connection to {host}")
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", connect_tcp)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _REAL_HTTPX_HANDLE_REQUEST)
+    return state
 
 
 @pytest.fixture(autouse=True)

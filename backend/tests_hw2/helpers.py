@@ -17,16 +17,24 @@ from app.services.pdf import estimate_tokens
 # --------------------------------------------------------------------------- PDFs
 
 
-def build_pdf(pages: list[list[tuple[str, float, bool]]], metadata: dict | None = None) -> bytes:
-    """A PDF whose pages hold (text, font size, bold) paragraphs, stacked top to bottom."""
+def build_pdf(pages: list[list[tuple]], metadata: dict | None = None) -> bytes:
+    """A PDF whose pages hold (text, font size, bold[, "html"]) paragraphs, stacked top to bottom.
+
+    Plain items use the base-14 Helvetica fonts, which only draw Latin-1-ish characters; items
+    marked "html" go through MuPDF's HTML layout, whose fonts also draw ligatures and daggers."""
     doc = pymupdf.open()
     for items in pages:
         page = doc.new_page()
         y = 72.0
-        for text, size, bold in items:
+        for text, size, bold, *mode in items:
             rect = pymupdf.Rect(72, y, 540, 760)
-            rest = page.insert_textbox(rect, text, fontsize=size, fontname="hebo" if bold else "helv")
-            used = (760 - y) - rest if rest >= 0 else 0
+            if mode == ["html"]:
+                css = f"* {{font-family: sans-serif; font-size: {size}px; font-weight: {'bold' if bold else 'normal'}}}"
+                spare, _scale = page.insert_htmlbox(rect, text, css=css)
+                used = rect.height - spare
+            else:
+                rest = page.insert_textbox(rect, text, fontsize=size, fontname="hebo" if bold else "helv")
+                used = (760 - y) - rest if rest >= 0 else 0
             y += used + size * 1.5
     if metadata:
         doc.set_metadata(metadata)
@@ -42,13 +50,16 @@ def sentence_block(sentence: str, repeat: int) -> str:
 PAPER_TITLE = "Deep Widgets For Robust Testing"
 
 
-def paper_pdf(title: str = PAPER_TITLE, authors: str = "Alice Smith, Bob Jones", extra_first_page=()) -> bytes:
-    """A small, well-structured two-page paper: title, authors, abstract, intro, results, references."""
+def paper_pdf(title: str = PAPER_TITLE, authors: str = "Alice Smith, Bob Jones", extra_first_page=(),
+              html: bool = False) -> bytes:
+    """A small, well-structured two-page paper: title, authors, abstract, intro, results, references.
+    `html` lays the title and author lines out with fonts that can draw any character."""
+    mode = ("html",) if html else ()
     return build_pdf(
         [
             [
-                (title, 20, True),
-                (authors, 11, False),
+                (title, 20, True, *mode),
+                (authors, 11, False, *mode),
                 *extra_first_page,
                 ("Abstract", 12, True),
                 (sentence_block("We study widgets in detail and show they work well in practice.", 6), 10, False),

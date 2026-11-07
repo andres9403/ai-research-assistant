@@ -72,18 +72,6 @@ def test_resolve_default_and_named_providers(monkeypatch):
         llm.resolve("ollama")
 
 
-def test_default_name_prefers_configured_provider(monkeypatch):
-    monkeypatch.setattr(settings, "llm_provider", "openai")
-    assert llm.default_name({"anthropic": object(), "openai": object()}) == "openai"
-    assert llm.default_name({"anthropic": object()}) == "anthropic"
-    assert llm.default_name({}) is None
-
-
-def test_ollama_status_is_off_with_blank_url():
-    status = llm.ollama_status()
-    assert (status.model, status.running, status.pulled) == ("gemma3:4b", False, False)
-
-
 def test_ollama_detected_when_model_pulled(ollama_server):
     status = llm.ollama_status()
     assert status.running and status.pulled
@@ -122,37 +110,24 @@ def test_ollama_status_treats_errors_as_not_running(ollama_server, reply):
     assert llm.ollama_status().running is False
 
 
-def test_setup_hint_depends_on_ollama_state():
-    assert "ollama pull" in llm.setup_hint(llm.OllamaStatus("m", running=True, pulled=False))
-    assert "https://ollama.com" in llm.setup_hint(llm.OllamaStatus("m", running=False, pulled=False))
-
-
-# ----------------------------------------------------------------------- JSON parsing
-
-
-def test_parse_accepts_objects_only():
-    assert llm._parse('{"a": 1}') == {"a": 1}
-    with pytest.raises(LLMError, match="malformed"):
-        llm._parse("not json")
-    with pytest.raises(LLMError, match="wrong shape"):
-        llm._parse("[1, 2]")
-
-
 # ----------------------------------------------------------------------- Ollama provider
 
 
-def test_ollama_provider_sends_schema_and_limits(ollama_server):
+@pytest.mark.parametrize("max_tokens, sent", [(500, 500), (1024, 1024), (1025, 1024), (5000, 1024)])
+def test_ollama_provider_sends_schema_16k_context_and_capped_output(ollama_server, max_tokens, sent):
     ollama_server["chat"] = json_response(
         {"message": {"content": '{"a": 7}'}, "done_reason": "stop", "prompt_eval_count": 11, "eval_count": 3}
     )
-    result = llm.OllamaProvider("http://ollama.test:11434/", "gemma3:4b").complete_json(**CALL)
+    result = llm.OllamaProvider("http://ollama.test:11434/", "gemma3:4b").complete_json(
+        **{**CALL, "max_tokens": max_tokens}
+    )
     assert (result.data, result.input_tokens, result.output_tokens) == ({"a": 7}, 11, 3)
     request = ollama_server["requests"][-1]
     assert request.url == "http://ollama.test:11434/api/chat"
     body = __import__("json").loads(request.content)
     assert body["format"] == SCHEMA
     assert body["stream"] is False
-    assert body["options"] == {"num_ctx": settings.ollama_num_ctx, "num_predict": llm.OLLAMA_MAX_OUTPUT_TOKENS}
+    assert body["options"] == {"num_ctx": 16384, "num_predict": sent}  # output capped at 1,024 tokens
     assert body["messages"][0] == {"role": "system", "content": "sys"}
 
 
@@ -206,6 +181,14 @@ def test_anthropic_provider_requests_structured_output():
     assert seen["system"] == "sys"
     assert seen["messages"] == [{"role": "user", "content": "prompt"}]
     assert seen["output_config"]["format"] == {"type": "json_schema", "schema": SCHEMA}
+
+
+@pytest.mark.parametrize(
+    "text, message", [("not json", "malformed JSON"), ("[1, 2]", "JSON of the wrong shape"), ("", "malformed JSON")]
+)
+def test_provider_answers_must_be_a_json_object(text, message):
+    with pytest.raises(LLMError, match=message):
+        anthropic_provider(lambda **k: anthropic_reply(text=text)).complete_json(**CALL)
 
 
 @pytest.mark.parametrize("stop_reason, message", [("refusal", "declined"), ("max_tokens", "cut off")])

@@ -3,7 +3,7 @@
 import pytest
 
 from app.models import ChatMessage, Summary
-from app.services import llm, summaries
+from app.services import summaries
 from app.services.llm import LLMError
 
 from tests_hw2.helpers import SUMMARY_DATA, add_paper, add_ready_paper
@@ -33,6 +33,29 @@ def test_summary_is_generated_from_selected_sections_and_cached(client, session,
     assert client.post(f"/api/papers/{paper.id}/summary").json() == body
     assert client.get(f"/api/papers/{paper.id}/summary").json() == body
     assert len(fake_llm.calls) == 1
+
+
+def big_paper(session, n_sections, tokens_each=1000):
+    text = "x" * (3 * tokens_each)  # exactly `tokens_each` tokens
+    return add_ready_paper(session, sections=[(f"Section {i}", text) for i in range(n_sections)])
+
+
+@pytest.mark.parametrize("n_sections, sent", [(8, 8), (12, 8)])
+def test_summary_sends_at_most_8k_tokens_of_the_paper(client, session, fake_llm, n_sections, sent):
+    paper = big_paper(session, n_sections)
+    fake_llm.responses = [SUMMARY_DATA]
+    body = client.post(f"/api/papers/{paper.id}/summary").json()
+    # eight 1,000-token chunks fill the 8,000-token budget exactly; the rest of a longer paper is not sent
+    assert len(body["sections"]) == sent
+    assert fake_llm.calls[0]["prompt"].count("x" * 3000) == sent
+
+
+@pytest.mark.parametrize("n_sections, sent", [(3, 3), (6, 3)])
+def test_question_sends_at_most_3k_tokens_of_excerpts(client, session, fake_llm, n_sections, sent):
+    paper = big_paper(session, n_sections)
+    fake_llm.responses = [{"answer": "Yes [1].", "found": True, "background": ""}]
+    assert client.post(f"/api/papers/{paper.id}/chat", json={"question": "What?"}).status_code == 200
+    assert fake_llm.calls[0]["prompt"].count("x" * 3000) == sent  # never the whole paper
 
 
 def test_summary_refresh_regenerates_and_replaces(client, session, fake_llm):
@@ -179,6 +202,7 @@ def test_not_found_answer_without_citations_is_accepted(client, session, fake_ll
     [
         (answer("Claim without citations."), "cited none of the paper's passages"),
         (answer("Bogus citation [99]."), "cited none of the paper's passages"),
+        (answer("Uncited claim.", background="General knowledge [1]."), "cited none"),  # background doesn't excuse it
         (answer("   "), "empty answer"),
     ],
 )

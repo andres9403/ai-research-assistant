@@ -3,9 +3,13 @@
 import pytest
 
 from app.models import ChatMessage, Chunk, Paper, Summary
-from app.config import settings
+from fastapi.testclient import TestClient
 
-from tests_hw2.helpers import add_paper, add_ready_paper
+from app.config import settings
+from app.db import engine
+from app.main import create_app
+
+from tests_hw2.helpers import SUMMARY_DATA, add_paper, add_ready_paper
 
 NEW_PAPER = {
     "source": "s2",
@@ -80,6 +84,22 @@ def test_save_paper_rejects_whitespace_only_title(client):
     assert client.post("/api/papers", json={"source": "s2", "title": "   "}).status_code == 422
 
 
+def test_saved_library_survives_a_restart(client, session):
+    saved = client.post("/api/papers", json=NEW_PAPER).json()
+    paper = session.get(Paper, saved["id"])
+    paper.summary = Summary(provider="openai", model="m", content=SUMMARY_DATA, sections=[], input_tokens=1,
+                            output_tokens=1)
+    paper.messages = [ChatMessage(role="user", content="kept question")]
+    session.commit()
+    session.close()
+
+    engine.dispose()  # drop every connection, as a stopped server would
+    with TestClient(create_app()) as restarted:
+        assert restarted.get(f"/api/papers/{saved['id']}").json() == saved
+        assert [m["content"] for m in restarted.get(f"/api/papers/{saved['id']}/chat").json()] == ["kept question"]
+        assert restarted.get(f"/api/papers/{saved['id']}/summary").json()["provider"] == "openai"
+
+
 # ----------------------------------------------------------------------- read / list
 
 
@@ -102,10 +122,15 @@ def test_list_papers_with_query_and_filters(client, session):
         "Graph Neural Networks"
     ]
     assert [p["title"] for p in client.get("/api/papers", params={"year_from": 2020}).json()] == ["Language Models"]
-    assert client.get("/api/papers", params={"year_to": 2000}).json() == []
+    assert [p["title"] for p in client.get("/api/papers", params={"year_from": 2018, "year_to": 2018}).json()] == [
+        "Graph Neural Networks"
+    ]
+    assert client.get("/api/papers", params={"year_to": 2017}).json() == []
 
 
-def test_list_papers_rejects_overlong_query(client):
+def test_list_papers_query_length_limit(client, session):
+    add_paper(session, title="x" * 300)
+    assert len(client.get("/api/papers", params={"q": "x" * 300}).json()) == 1  # 300 characters is allowed
     assert client.get("/api/papers", params={"q": "x" * 301}).status_code == 422
 
 
@@ -142,6 +167,14 @@ def test_patch_to_a_duplicate_title_is_409(client, session):
 
 def test_patch_missing_paper_is_404(client):
     assert client.patch("/api/papers/42", json={"title": "x"}).status_code == 404
+
+
+@pytest.mark.parametrize("year", [1000, 2100])
+def test_patch_accepts_years_at_the_bounds(client, session, year):
+    paper = add_paper(session)
+    response = client.patch(f"/api/papers/{paper.id}", json={"year": year})
+    assert response.status_code == 200
+    assert response.json()["year"] == year
 
 
 # ----------------------------------------------------------------------- delete

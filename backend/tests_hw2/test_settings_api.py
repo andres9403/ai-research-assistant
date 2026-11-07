@@ -13,7 +13,7 @@ from app.config import settings
 from app.services import api_keys, http, llm
 from app.services.llm import LLMError
 
-from tests_hw2.helpers import mock_client
+from tests_hw2.helpers import add_ready_paper, mock_client
 
 VALID_KEY = "sk-test_" + "a" * 30
 
@@ -47,6 +47,20 @@ def test_llm_settings_with_nothing_configured(client):
     assert body == {"default": None, "providers": [], "ollama": {"model": "gemma3:4b", "running": False}}
 
 
+def test_ollama_is_listed_last_and_a_keyed_default_stays_default(client, monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", VALID_KEY)
+    monkeypatch.setattr(settings, "ollama_url", "http://ollama.test:11434")
+    tags = {"models": [{"name": "gemma3:4b"}]}
+    monkeypatch.setattr(http, "make_client", lambda timeout=10.0: mock_client(lambda r: httpx.Response(200, json=tags)))
+    body = client.get("/api/settings/llm").json()
+    assert [p["name"] for p in body["providers"]] == ["anthropic", "ollama"]
+    assert body["providers"][1] == {"name": "ollama", "label": "Ollama (local)", "model": "gemma3:4b"}
+    assert body["ollama"] == {"model": "gemma3:4b", "running": True}
+    assert body["default"] == "anthropic"
+    monkeypatch.setattr(settings, "llm_provider", "ollama")  # a configured default that can answer wins
+    assert client.get("/api/settings/llm").json()["default"] == "ollama"
+
+
 def test_llm_settings_lists_keyed_providers_without_keys(client, monkeypatch):
     monkeypatch.setattr(settings, "anthropic_api_key", VALID_KEY)
     monkeypatch.setattr(settings, "llm_provider", "openai")
@@ -59,7 +73,8 @@ def test_llm_settings_lists_keyed_providers_without_keys(client, monkeypatch):
     assert VALID_KEY not in response.text
 
 
-def test_saving_an_llm_key_checks_it_stores_it_and_enables_the_provider(client, key_checks):
+def test_saving_an_llm_key_checks_it_stores_it_and_enables_the_provider(client, key_checks, caplog):
+    caplog.set_level("DEBUG")
     response = client.put("/api/settings/llm/keys/openai", json={"key": f"  {VALID_KEY}  "})
     assert response.status_code == 200
     assert key_checks == [("openai", VALID_KEY)]
@@ -68,11 +83,21 @@ def test_saving_an_llm_key_checks_it_stores_it_and_enables_the_provider(client, 
     assert VALID_KEY not in response.text
     assert settings.openai_api_key == VALID_KEY
     assert f"OPENAI_API_KEY={VALID_KEY}" in config.ENV_FILE.read_text().splitlines()
+    assert VALID_KEY not in caplog.text  # never logged
+
+
+def test_a_saved_key_is_used_at_once_without_a_restart(client, key_checks, session):
+    paper = add_ready_paper(session)
+    assert client.post(f"/api/papers/{paper.id}/summary").status_code == 503  # no LLM yet
+    client.put("/api/settings/llm/keys/anthropic", json={"key": VALID_KEY})
+    provider = llm.resolve()
+    assert (provider.name, provider.model) == ("anthropic", llm.DEFAULT_MODELS["anthropic"])
 
 
 @pytest.mark.parametrize(
     "key",
-    ["short", "has spaces in the middle of it ok", "a" * 401, VALID_KEY + "\nLLM_PROVIDER=openai", "ключ" * 10],
+    ["short", "a" * 19, "has spaces in the middle of it ok", "a" * 401, VALID_KEY + "\nLLM_PROVIDER=openai",
+     "ключ" * 10],
 )
 def test_malformed_keys_are_422_and_not_saved(client, key_checks, key):
     response = client.put("/api/settings/llm/keys/anthropic", json={"key": key})
@@ -82,6 +107,12 @@ def test_malformed_keys_are_422_and_not_saved(client, key_checks, key):
     assert key_checks == []
     assert not config.ENV_FILE.exists()
     assert settings.anthropic_api_key in (None, "")
+
+
+@pytest.mark.parametrize("key", ["a" * 20, "Z" * 400, "sk-ant_" + "9" * 13])
+def test_keys_of_20_to_400_key_characters_are_accepted(client, key_checks, key):
+    assert client.put("/api/settings/llm/keys/anthropic", json={"key": key}).status_code == 200
+    assert key_checks == [("anthropic", key)]
 
 
 def test_rejected_key_is_400_and_not_saved(client, monkeypatch):
@@ -129,11 +160,32 @@ def test_search_key_lifecycle(client, monkeypatch):
     response = client.put("/api/settings/search/keys/semantic_scholar", json={"key": VALID_KEY})
     assert response.status_code == 200
     assert response.json() == {"semantic_scholar_key": True}
-    assert seen[0].headers["x-api-key"] == VALID_KEY
+    [check] = seen  # one small, fixed lookup
+    assert check.url.path == "/graph/v1/paper/arXiv:1706.03762"
+    assert check.url.params["fields"] == "paperId"
+    assert check.headers["x-api-key"] == VALID_KEY
     assert f"SEMANTIC_SCHOLAR_API_KEY={VALID_KEY}" in config.ENV_FILE.read_text()
 
     assert client.delete("/api/settings/search/keys/semantic_scholar").json() == {"semantic_scholar_key": False}
     assert settings.semantic_scholar_api_key is None
+
+
+def test_saved_search_key_is_used_by_the_next_search_without_a_restart(client, monkeypatch):
+    searches = []
+
+    def handler(request):
+        if request.url.path.endswith("/paper/search"):
+            searches.append(request)
+            return httpx.Response(200, json={"data": [{"paperId": "p1", "title": "A Result"}]})
+        return httpx.Response(200, json={"paperId": "check"})
+
+    monkeypatch.setattr(http, "make_client", lambda timeout=10.0: mock_client(handler))
+    client.get("/api/search", params={"q": "widgets"})
+    client.put("/api/settings/search/keys/semantic_scholar", json={"key": VALID_KEY})
+    body = client.get("/api/search", params={"q": "widgets"}).json()
+    assert body["provider"] == "s2"
+    assert "x-api-key" not in searches[0].headers
+    assert searches[1].headers["x-api-key"] == VALID_KEY
 
 
 @pytest.mark.parametrize(
