@@ -99,10 +99,14 @@ def test_rejected_key_is_400_and_not_saved(client, monkeypatch):
 @pytest.mark.parametrize("provider", ["ollama", "semantic_scholar", "gemini"])
 def test_llm_key_endpoint_only_accepts_keyed_llm_providers(client, key_checks, provider):
     assert client.put(f"/api/settings/llm/keys/{provider}", json={"key": VALID_KEY}).status_code == 422
+    assert key_checks == []
+    assert not config.ENV_FILE.exists()
 
 
 def test_key_body_is_required(client, key_checks):
     assert client.put("/api/settings/llm/keys/openai", json={}).status_code == 422
+    assert key_checks == []
+    assert not config.ENV_FILE.exists()
 
 
 def test_removing_an_llm_key(client, key_checks):
@@ -151,8 +155,21 @@ def test_search_key_check_failures_are_400(client, monkeypatch, response, messag
     assert client.get("/api/settings/search").json() == {"semantic_scholar_key": False}
 
 
-def test_search_key_endpoint_rejects_other_providers(client):
+def test_search_key_endpoint_rejects_other_providers(client, monkeypatch):
+    seen = s2_answers(monkeypatch, httpx.Response(200))
     assert client.put("/api/settings/search/keys/anthropic", json={"key": VALID_KEY}).status_code == 422
+    assert seen == []
+    assert not config.ENV_FILE.exists()
+    assert settings.anthropic_api_key in (None, "")
+
+
+def test_malformed_search_key_is_422_without_contacting_semantic_scholar(client, monkeypatch):
+    seen = s2_answers(monkeypatch, httpx.Response(200))
+    response = client.put("/api/settings/search/keys/semantic_scholar", json={"key": "bad key"})
+    assert response.status_code == 422
+    assert "doesn't look like an API key" in response.json()["detail"]
+    assert seen == []
+    assert not config.ENV_FILE.exists()
 
 
 # ----------------------------------------------------------------------- write_env

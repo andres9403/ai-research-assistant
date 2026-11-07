@@ -4,9 +4,11 @@ import socket
 
 import httpcore
 import httpx
+import pymupdf
 import pytest
 
 from app.config import settings
+from app.db import SessionLocal
 from app.main import app
 from app.models import ChatMessage, Chunk, Paper, Summary
 from app.routers import upload as upload_router
@@ -20,6 +22,7 @@ from tests_hw2.helpers import (
     FakeLLM,
     add_paper,
     add_ready_paper,
+    build_pdf,
     encrypted_pdf,
     json_response,
     mock_client,
@@ -166,8 +169,10 @@ def test_upload_rejects_oversized_file(client, offline_lookups, monkeypatch):
     assert response.json()["detail"] == "PDFs are limited to 1 MB"
 
 
-def test_upload_requires_a_file(client):
+def test_upload_requires_a_file(client, session):
     assert client.post("/api/papers/upload").status_code == 422
+    assert session.query(Paper).count() == 0
+    assert list(settings.pdf_dir.iterdir()) == []
 
 
 def test_uploading_the_same_pdf_twice_is_409(client, offline_lookups):
@@ -196,6 +201,47 @@ def test_upload_matching_a_paper_mid_download_is_409(client, session, offline_lo
     response = upload(client, paper_pdf())
     assert response.status_code == 409
     assert response.json()["detail"]["paper_id"] == saved.id
+    session.expire_all()
+    assert session.get(Paper, saved.id).status == "downloading"  # the running download is left alone
+    assert session.get(Paper, saved.id).pdf_path is None
+    assert session.query(Paper).count() == 1
+
+
+def test_upload_rolls_back_when_the_pdf_cannot_be_stored(session, monkeypatch, tmp_path):
+    # "pdfs" is a file, so creating the PDF directory raises an OSError
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    (tmp_path / "pdfs").write_text("not a directory")
+    client = mock_client(lambda request: httpx.Response(404))
+    with pytest.raises(OSError):
+        pipeline.upload(session, paper_pdf(), "paper.pdf", client)
+    assert session.query(Paper).count() == 0
+    assert session.query(Chunk).count() == 0
+
+
+def test_pdf_with_text_but_no_body_sections_is_marked_failed(client, offline_lookups):
+    data = build_pdf([[("A Title Page Only", 20, True), ("References", 12, True),
+                       ("[1] A. Author. Some cited work. 2020.", 10, False)]])
+    body = upload(client, data).json()
+    assert body["status"] == "failed"
+    assert body["status_detail"] == "The PDF has text, but no body sections were found in it."
+    assert client.get(f"/api/papers/{body['id']}/chunks").json() == []
+
+
+def test_scanned_upload_does_not_call_the_llm(client, offline_lookups, fake_llm):
+    fake_llm.responses = [{"title": "Should Not Be Used", "authors": [], "year": 0}]
+    body = upload(client, scanned_like_pdf(), filename="scan.pdf").json()
+    assert fake_llm.calls == []  # a page without text has nothing for the LLM to read
+    assert body["title"] == "scan"
+
+
+def test_rotated_arxiv_stamp_feeds_metadata_and_the_llm_prompt(client, offline_lookups, fake_llm):
+    doc = pymupdf.open(stream=paper_pdf(), filetype="pdf")
+    doc[0].insert_text((30, 600), "arXiv:2103.01234v2 [cs.LG] 4 Mar 2021", fontsize=9, rotate=90)
+    fake_llm.responses = [{"title": PAPER_TITLE, "authors": ["Alice Smith", "Bob Jones"], "year": 1999}]
+    body = upload(client, doc.tobytes()).json()
+    assert body["year"] == 2021  # from the stamp's arXiv id; the LLM's year is not trusted over it
+    assert body["url"] == "https://arxiv.org/abs/2103.01234"
+    assert fake_llm.calls[0]["prompt"].startswith("<page>\narXiv:2103.01234v2")
 
 
 # ----------------------------------------------------------------------- attach
@@ -205,16 +251,34 @@ def attach(client, paper_id, data, **form):
     return client.post(f"/api/papers/{paper_id}/pdf", files={"file": ("p.pdf", data, "application/pdf")}, data=form)
 
 
-def test_attach_pdf_processes_it_and_fills_only_blank_fields(client, session):
-    paper = add_paper(session, title="My Own Title", authors=["Kept Author"], year=None, abstract=None)
-    response = attach(client, paper.id, paper_pdf())
+def pdf_with_doi_and_year() -> bytes:
+    return paper_pdf(extra_first_page=[("Published in 2019. doi: 10.1145/12345.67890", 9, False)])
+
+
+def test_attach_fills_blank_fields_from_the_pdf(client, session):
+    paper = add_paper(session, title="My Own Title", authors=[], year=None, abstract=None, doi=None)
+    response = attach(client, paper.id, pdf_with_doi_and_year())
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ready"
     assert body["has_pdf"] is True
+    assert body["authors"] == ["Alice Smith", "Bob Jones"]
+    assert body["year"] == 2019
+    assert body["abstract"].startswith("We study widgets")
+    assert body["doi"] == "10.1145/12345.67890"
+
+
+def test_attach_never_overwrites_existing_fields(client, session):
+    paper = add_paper(session, title="My Own Title", authors=["Kept Author"], year=2001, abstract="Kept abstract.",
+                      doi="10.1/kept", metadata_source="edited")
+    body = attach(client, paper.id, pdf_with_doi_and_year()).json()
+    assert body["status"] == "ready"
     assert body["title"] == "My Own Title"
     assert body["authors"] == ["Kept Author"]
-    assert body["abstract"].startswith("We study widgets")
+    assert body["year"] == 2001
+    assert body["abstract"] == "Kept abstract."
+    assert body["doi"] == "10.1/kept"
+    assert body["metadata_source"] == "edited"
 
 
 def test_replacing_a_pdf_clears_summary_and_chat(client, session):
@@ -236,19 +300,34 @@ def test_attach_skips_llm_when_nothing_is_blank(client, session, fake_llm):
 
 
 def test_attach_invalid_pdf_is_422_and_leaves_paper_unchanged(client, session):
-    paper = add_paper(session)
+    paper = add_ready_paper(session)
+    before = client.get(f"/api/papers/{paper.id}").json()
     response = attach(client, paper.id, b"not a pdf")
     assert response.status_code == 422
-    assert client.get(f"/api/papers/{paper.id}").json()["status"] == "no_pdf"
+    assert client.get(f"/api/papers/{paper.id}").json() == before
+    assert len(client.get(f"/api/papers/{paper.id}/chunks").json()) == 5
 
 
-def test_attach_while_busy_is_409(client, session):
-    paper = add_paper(session, status="processing")
-    assert attach(client, paper.id, paper_pdf()).status_code == 409
+def test_attach_while_busy_is_409_and_changes_nothing(client, session):
+    paper = add_ready_paper(session, pdf_path="old.pdf")
+    paper.status = "processing"
+    session.commit()
+    (settings.pdf_dir / "old.pdf").write_bytes(b"%PDF-old")
+    response = attach(client, paper.id, paper_pdf())
+    assert response.status_code == 409
+    assert response.json()["detail"] == "The PDF is already being processed"
+    session.expire_all()
+    stored = session.get(Paper, paper.id)
+    assert (stored.status, stored.pdf_path) == ("processing", "old.pdf")
+    assert [c.section for c in stored.chunks] == ["Abstract", "Introduction", "Method", "Results", "Conclusion"]
+    assert (settings.pdf_dir / "old.pdf").read_bytes() == b"%PDF-old"
+    assert not (settings.pdf_dir / f"{paper.id}.pdf").exists()
 
 
-def test_attach_to_missing_paper_is_404(client):
+def test_attach_to_missing_paper_is_404(client, session):
     assert attach(client, 12345, paper_pdf()).status_code == 404
+    assert session.query(Paper).count() == 0
+    assert list(settings.pdf_dir.iterdir()) == []
 
 
 def test_scanned_pdf_marks_paper_failed(client, session):
@@ -329,6 +408,54 @@ def test_unexpected_pipeline_error_marks_paper_failed(client, session, download_
     body = client.get(f"/api/papers/{paper.id}").json()
     assert body["status"] == "failed"
     assert "failed unexpectedly" in body["status_detail"]
+
+
+def test_paper_deleted_during_download_is_not_recreated(client, session, monkeypatch):
+    url = "https://oa.example.org/p.pdf"
+    paper = add_paper(session, pdf_url=url)
+
+    def handler(request):
+        # the user deletes the paper while its PDF is still downloading
+        with SessionLocal() as other:
+            other.delete(other.get(Paper, paper.id))
+            other.commit()
+        return httpx.Response(200, content=paper_pdf())
+
+    monkeypatch.setattr(http, "make_download_client", lambda timeout=30.0: mock_client(handler))
+    assert client.post(f"/api/papers/{paper.id}/pdf/fetch").status_code == 202
+    session.expire_all()
+    assert session.query(Paper).count() == 0
+    assert session.query(Chunk).count() == 0
+    assert list(settings.pdf_dir.iterdir()) == []
+
+
+def test_upload_stays_usable_when_embedding_fails(client, session, offline_lookups, fake_embedder, fake_llm):
+    fake_embedder.fail = True
+    response = upload(client, paper_pdf())
+    assert response.status_code == 201
+    paper_id = response.json()["id"]
+    assert client.get(f"/api/papers/{paper_id}").json()["status"] == "ready"
+    assert all(c.embedding is None for c in session.query(Chunk).filter_by(paper_id=paper_id))
+
+    # the first question embeds the chunks itself once the model works again
+    fake_embedder.fail = False
+    fake_llm.responses = [{"answer": "Yes [1].", "found": True, "background": ""}]
+    assert client.post(f"/api/papers/{paper_id}/chat", json={"question": "Results?"}).status_code == 200
+    session.expire_all()
+    assert all(c.embedding is not None for c in session.query(Chunk).filter_by(paper_id=paper_id))
+
+
+def test_unexpected_embedding_error_is_contained(session, monkeypatch):
+    paper = add_ready_paper(session)
+
+    def explode(*args):
+        raise RuntimeError("chunks deleted meanwhile")
+
+    monkeypatch.setattr(pipeline.retrieval, "ensure_embeddings", explode)
+    pipeline.embed_paper(paper.id)  # must not raise
+    pipeline.embed_paper(999999)  # a paper deleted before its task ran is ignored
+    session.expire_all()
+    assert session.get(Paper, paper.id).status == "ready"
 
 
 def test_download_task_ignores_papers_not_queued(session, download_server):
@@ -422,6 +549,36 @@ def test_download_backend_connects_to_the_checked_ip(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", fake_resolver(["93.184.216.34"]))
     assert http.PublicNetworkBackend().connect_tcp("example.org", 443) == "stream"
     assert connects == ["93.184.216.34"]  # the validated address, not the name
+
+
+def test_unresolvable_host_is_a_connect_error(monkeypatch):
+    def fail(*args, **kwargs):
+        raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fail)
+    with pytest.raises(httpcore.ConnectError, match="not known"):
+        public_addresses("no-such-host.invalid", 443)
+
+
+def test_download_backend_tries_each_public_address_then_gives_up(monkeypatch):
+    tried = []
+
+    def connect(self, host, port, *args, **kwargs):
+        tried.append(host)
+        if host == "93.184.216.35":
+            return "stream"
+        raise httpcore.ConnectError(f"{host} unreachable")
+
+    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", connect)
+    monkeypatch.setattr(socket, "getaddrinfo", fake_resolver(["93.184.216.34", "93.184.216.35"]))
+    assert http.PublicNetworkBackend().connect_tcp("example.org", 443) == "stream"
+    assert tried == ["93.184.216.34", "93.184.216.35"]
+
+    tried.clear()
+    monkeypatch.setattr(socket, "getaddrinfo", fake_resolver(["93.184.216.34", "93.184.216.36"]))
+    with pytest.raises(httpcore.ConnectError, match="93.184.216.36 unreachable"):
+        http.PublicNetworkBackend().connect_tcp("example.org", 443)
+    assert tried == ["93.184.216.34", "93.184.216.36"]
 
 
 def test_download_client_ignores_proxy_settings():

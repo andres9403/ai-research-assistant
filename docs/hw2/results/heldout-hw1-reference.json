@@ -1,0 +1,175 @@
+{
+  "test_dir": "tests",
+  "set": "heldout",
+  "mutants": 18,
+  "killed": 16,
+  "score": 0.889,
+  "survived": [
+    "H11",
+    "H15"
+  ],
+  "results": [
+    {
+      "id": "H01",
+      "file": "app/services/search.py",
+      "requirement": "S2 results with only an arXiv id get an arXiv PDF link",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_search.py::test_semantic_scholar_results_are_normalised",
+      "seconds": 83.3
+    },
+    {
+      "id": "H02",
+      "file": "app/services/search.py",
+      "requirement": "A key is only suggested when the search had none",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_s2_key.py::test_429_with_a_key_set_does_not_suggest_one",
+      "seconds": 79.2
+    },
+    {
+      "id": "H03",
+      "file": "app/services/search.py",
+      "requirement": "arXiv queries drop stopwords",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_metadata.py::test_arxiv_title_search_falls_back_to_words_without_stopwords",
+      "seconds": 47.6
+    },
+    {
+      "id": "H04",
+      "file": "app/services/search.py",
+      "requirement": "Local author filter/sort fetch a full page of S2 matches",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_search_filters.py::test_s2_author_and_ordering_are_applied_locally_to_a_full_page",
+      "seconds": 84.5
+    },
+    {
+      "id": "H05",
+      "file": "app/services/library.py",
+      "requirement": "Library can be filtered by source",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_papers.py::test_list_newest_first_and_filters",
+      "seconds": 51.2
+    },
+    {
+      "id": "H06",
+      "file": "app/services/library.py",
+      "requirement": "Punctuation doesn't hide a duplicate title",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_papers.py::test_duplicates_are_rejected[same-normalised-title]",
+      "seconds": 51.7
+    },
+    {
+      "id": "H07",
+      "file": "app/services/chat.py",
+      "requirement": "Follow-up questions are also searched joined to the previous one",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_chat.py::test_chunks_from_before_m4_are_embedded_on_the_first_question",
+      "seconds": 12.5
+    },
+    {
+      "id": "H08",
+      "file": "app/services/chat.py",
+      "requirement": "Conversation history stays within its token budget",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_chat.py::test_history_is_capped",
+      "seconds": 13.8
+    },
+    {
+      "id": "H09",
+      "file": "app/services/retrieval.py",
+      "requirement": "Without an abstract, the first chunk is the anchor",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_chat.py::test_anchors_are_the_abstract_and_conclusion_or_the_opening_chunk",
+      "seconds": 16.7
+    },
+    {
+      "id": "H10",
+      "file": "app/services/summaries.py",
+      "requirement": "Summary context favours abstract/conclusion over other sections",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_summaries.py::test_context_gives_every_section_its_opening_chunk_first",
+      "seconds": 100.9
+    },
+    {
+      "id": "H11",
+      "file": "app/services/pdf.py",
+      "requirement": "Only margin text repeated on many pages is a running head",
+      "killed": false,
+      "exit_code": 0,
+      "killed_by": null,
+      "seconds": 106.4
+    },
+    {
+      "id": "H12",
+      "file": "app/services/pdf.py",
+      "requirement": "Unnumbered ambiguous headings ('Results') need a larger font",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_chat.py::test_question_is_answered_from_retrieved_passages_with_citations",
+      "seconds": 14.2
+    },
+    {
+      "id": "H13",
+      "file": "app/services/metadata.py",
+      "requirement": "Heuristic titles shorter than 8 characters are rejected",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_llm_metadata.py::test_missing_abstract_is_requested_and_bad_values_are_ignored",
+      "seconds": 46.1
+    },
+    {
+      "id": "H14",
+      "file": "app/services/api_keys.py",
+      "requirement": ".env is readable by its owner only (0600)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_api_keys.py::test_saved_key_is_checked_written_to_env_and_used_at_once",
+      "seconds": 4.6
+    },
+    {
+      "id": "H15",
+      "file": "app/services/pipeline.py",
+      "requirement": "A download isn't queued twice while one is running",
+      "killed": false,
+      "exit_code": 0,
+      "killed_by": null,
+      "seconds": 104.8
+    },
+    {
+      "id": "H16",
+      "file": "app/routers/upload.py",
+      "requirement": "Upload answers 200 (not 201) when it attached to an existing paper",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_pdf_api.py::test_upload_matched_on_arxiv_attaches_to_the_saved_arxiv_paper",
+      "seconds": 70.1
+    },
+    {
+      "id": "H17",
+      "file": "app/services/llm.py",
+      "requirement": "An unknown provider name is a clear 'Unknown LLM provider' error",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_llm.py::test_resolve_explains_what_is_missing",
+      "seconds": 49.1
+    },
+    {
+      "id": "H18",
+      "file": "app/routers/ai.py",
+      "requirement": "No summary is generated for a paper without full text (409)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests/test_summaries.py::test_summary_needs_the_full_text",
+      "seconds": 75.7
+    }
+  ]
+}

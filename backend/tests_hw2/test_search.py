@@ -243,6 +243,14 @@ def test_arxiv_request_is_empty_for_a_query_without_words():
     assert arxiv_request("!!! ???", 5, SearchFilters()).params == {}
 
 
+def test_wordless_query_returns_no_arxiv_results_without_querying_arxiv():
+    upstream = Upstream(s2=json_response({"data": []}))
+    outcome = service(upstream).search("!!! ???", 5)
+    assert outcome.provider == "arxiv"
+    assert outcome.results == []
+    assert upstream.hosts() == ["api.semanticscholar.org"]  # arXiv would match nothing, so it isn't asked
+
+
 @pytest.mark.parametrize(
     "text, expected",
     [

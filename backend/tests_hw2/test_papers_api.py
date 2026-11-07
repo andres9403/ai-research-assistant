@@ -126,7 +126,9 @@ def test_patch_updates_only_given_fields(client, session):
 @pytest.mark.parametrize("payload", [{"year": 999}, {"year": 2101}, {"title": ""}, {"authors": "Ann"}])
 def test_patch_validates_fields(client, session, payload):
     paper = add_paper(session)
+    before = client.get(f"/api/papers/{paper.id}").json()
     assert client.patch(f"/api/papers/{paper.id}", json=payload).status_code == 422
+    assert client.get(f"/api/papers/{paper.id}").json() == before  # nothing applied, not marked edited
 
 
 def test_patch_to_a_duplicate_title_is_409(client, session):
@@ -186,7 +188,9 @@ def test_get_pdf_without_file_is_404(client, session):
 
 def test_get_pdf_with_dangling_path_is_404(client, session):
     paper = add_paper(session, pdf_path="missing.pdf")
-    assert client.get(f"/api/papers/{paper.id}/pdf").status_code == 404
+    response = client.get(f"/api/papers/{paper.id}/pdf")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "This paper has no PDF"
 
 
 def test_get_pdf_serves_the_stored_file(client, session):

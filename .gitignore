@@ -11,3 +11,7 @@ frontend/dist/
 # App data and secrets
 data/
 .env
+
+# Coverage data
+.coverage
+htmlcov/

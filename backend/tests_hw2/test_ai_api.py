@@ -66,6 +66,7 @@ def test_summary_without_any_llm_is_503(client, session):
     response = client.post(f"/api/papers/{paper.id}/summary")
     assert response.status_code == 503
     assert "No LLM is set up" in response.json()["detail"]
+    assert session.query(Summary).count() == 0
 
 
 def test_cached_summary_is_served_even_without_an_llm(client, session):
@@ -105,7 +106,10 @@ def test_summary_llm_failure_is_502_and_nothing_is_cached(client, session, fake_
 
 
 def test_summary_for_missing_paper_is_404(client, fake_llm):
-    assert client.post("/api/papers/777/summary").status_code == 404
+    response = client.post("/api/papers/777/summary")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Paper not found"
+    assert fake_llm.calls == []
 
 
 # ----------------------------------------------------------------------- chat
@@ -192,17 +196,25 @@ def test_invalid_questions_are_422(client, session, fake_llm, payload):
     paper = add_ready_paper(session)
     assert client.post(f"/api/papers/{paper.id}/chat", json=payload).status_code == 422
     assert fake_llm.calls == []
+    assert session.query(ChatMessage).count() == 0
 
 
 def test_question_on_paper_without_text_is_409(client, session, fake_llm):
     paper = add_paper(session, status="failed")
     response = client.post(f"/api/papers/{paper.id}/chat", json={"question": "Hi?"})
     assert response.status_code == 409
+    assert "full text isn't available" in response.json()["detail"]
+    assert fake_llm.calls == []
+    assert session.query(ChatMessage).count() == 0
 
 
-def test_question_without_llm_is_503(client, session):
+def test_question_without_llm_is_503(client, session, fake_embedder):
     paper = add_ready_paper(session)
-    assert client.post(f"/api/papers/{paper.id}/chat", json={"question": "Hi?"}).status_code == 503
+    response = client.post(f"/api/papers/{paper.id}/chat", json={"question": "Hi?"})
+    assert response.status_code == 503
+    assert "No LLM is set up" in response.json()["detail"]
+    assert session.query(ChatMessage).count() == 0
+    assert fake_embedder.calls == []  # rejected before any retrieval work
 
 
 def test_embedding_failure_is_503(client, session, fake_llm, fake_embedder):

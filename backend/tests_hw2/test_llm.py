@@ -92,13 +92,19 @@ def test_ollama_detected_when_model_pulled(ollama_server):
     assert (provider.name, provider.model) == ("ollama", "gemma3:4b")
 
 
-def test_ollama_running_without_model_is_not_available(ollama_server):
+def test_ollama_running_without_model_is_not_available(ollama_server, monkeypatch):
     ollama_server["tags"] = json_response({"models": [{"name": "llama3.2:latest"}]})
     status = llm.ollama_status()
     assert status.running and not status.pulled
     assert "ollama" not in llm.available(status)
-    with pytest.raises(LLMNotConfigured, match="ollama pull gemma3:4b"):
+    # with no provider at all, the setup hint says what to pull
+    with pytest.raises(LLMNotConfigured, match=r"No LLM is set up\. Ollama is running but doesn't have gemma3:4b"):
         llm.resolve("ollama")
+    # with another provider configured, asking for Ollama by name says the model is missing
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+    with pytest.raises(LLMNotConfigured, match=r"^Ollama doesn't have gemma3:4b\. Run: ollama pull gemma3:4b$"):
+        llm.resolve("ollama")
+    assert llm.resolve().name == "anthropic"
 
 
 def test_ollama_model_without_tag_matches_latest(ollama_server, monkeypatch):
@@ -288,12 +294,53 @@ def test_openai_provider_handles_refusal_truncation_and_missing_usage():
     assert (result.input_tokens, result.output_tokens) == (0, 0)
 
 
-def test_openai_sdk_errors_become_user_messages():
+@pytest.mark.parametrize(
+    "cls, status, message",
+    [
+        ("AuthenticationError", 401, "OpenAI rejected the API key"),
+        ("PermissionDeniedError", 403, r"can't use this model \(gpt-4o\)"),
+        ("NotFoundError", 404, "doesn't know the model 'gpt-4o'. Check OPENAI_MODEL"),
+        ("RateLimitError", 429, "out of credit"),
+        ("InternalServerError", 503, r"OpenAI API returned an error \(HTTP 503\)"),
+    ],
+)
+def test_openai_sdk_errors_become_user_messages(cls, status, message):
     def create(**kwargs):
-        raise sdk_error(openai, "RateLimitError", 429)
+        raise sdk_error(openai, cls, status)
 
-    with pytest.raises(LLMError, match="out of credit"):
+    with pytest.raises(LLMError, match=message) as info:
         openai_provider("gpt-4o", create).complete_json(**CALL)
+    assert "sk-openai-test" not in str(info.value)
+
+
+def test_openai_connection_error():
+    def create(**kwargs):
+        raise openai.APIConnectionError(request=httpx2.Request("POST", "https://api.example.test"))
+
+    with pytest.raises(LLMError, match="Couldn't reach the OpenAI API"):
+        openai_provider("gpt-4o", create).complete_json(**CALL)
+
+
+def test_openai_key_check():
+    provider = llm.OpenAIProvider("sk-openai-test", "gpt-4o")
+    retrieved = []
+    provider.client = SimpleNamespace(models=SimpleNamespace(retrieve=lambda model: retrieved.append(model)))
+    provider.check()  # a working key passes silently
+    assert retrieved == ["gpt-4o"]
+
+    def reject(model):
+        raise sdk_error(openai, "AuthenticationError", 401)
+
+    provider.client = SimpleNamespace(models=SimpleNamespace(retrieve=reject))
+    with pytest.raises(LLMError, match="^OpenAI rejected this API key.$"):
+        provider.check()
+
+    def missing(model):
+        raise sdk_error(openai, "NotFoundError", 404)
+
+    provider.client = SimpleNamespace(models=SimpleNamespace(retrieve=missing))
+    with pytest.raises(LLMError, match="doesn't know the model 'gpt-4o'"):
+        provider.check()
 
 
 def test_check_key_uses_the_configured_model(monkeypatch):

@@ -18,17 +18,22 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from hw2_eval.mutants import MUTANTS, Mutant
+from hw2_eval.mutants import HELDOUT, MUTANTS, Mutant
+
+SETS = {"main": MUTANTS, "heldout": HELDOUT}
 
 BACKEND = Path(__file__).resolve().parents[1]
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache")
+
+
+SOURCE: Path | None = None  # --from: run an older snapshot of test_dir under the same name
 
 
 def workspace(test_dir: str) -> Path:
     root = Path(tempfile.mkdtemp(prefix="hw2-mut-"))
     backend = root / "backend"
     shutil.copytree(BACKEND / "app", backend / "app", ignore=IGNORE)
-    shutil.copytree(BACKEND / test_dir, backend / test_dir, ignore=IGNORE)
+    shutil.copytree(SOURCE or BACKEND / test_dir, backend / test_dir, ignore=IGNORE)
     return root
 
 
@@ -76,10 +81,14 @@ def main() -> None:
     parser.add_argument("--out", required=True, help="where to write the JSON results")
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--set", choices=SETS, default="main", help="main (shown to the agent in Round 2) or heldout")
+    parser.add_argument("--from", dest="source", help="copy the tests from this directory instead (e.g. a git snapshot)")
     parser.add_argument("--only", nargs="*", help="mutant ids to run (default: all)")
     args = parser.parse_args()
 
-    mutants = [m for m in MUTANTS if not args.only or m.id in args.only]
+    global SOURCE
+    SOURCE = Path(args.source).resolve() if args.source else None
+    mutants = [m for m in SETS[args.set] if not args.only or m.id in args.only]
     for m in mutants:
         check(m)
 
@@ -97,6 +106,7 @@ def main() -> None:
     killed = sum(r["killed"] for r in results)
     summary = {
         "test_dir": args.test_dir,
+        "set": args.set,
         "mutants": len(results),
         "killed": killed,
         "score": round(killed / len(results), 3),

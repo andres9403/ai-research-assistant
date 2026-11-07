@@ -1,5 +1,6 @@
 """Tests for services/pdf.py: validation, text extraction, section splitting and chunking."""
 
+import pymupdf
 import pytest
 
 from app.services import pdf
@@ -101,6 +102,23 @@ def test_text_normalisation_expands_ligatures_and_collapses_spaces():
     assert pdf._normalize("An eﬃcient ﬁne   method­") == "An efficient fine method"
 
 
+def test_extract_merges_split_heading_spans_and_ignores_images_and_rotated_stamps():
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((30, 600), "arXiv:2103.01234v2 [cs.LG] 4 Mar 2021", fontsize=9, rotate=90)
+    page.insert_text((72, 100), "1", fontsize=12, fontname="hebo")  # PyMuPDF reads these as two lines
+    page.insert_text((90, 100), "Introduction", fontsize=12, fontname="hebo")
+    page.insert_text((72, 130), "Body text here about widgets.", fontsize=10)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 10, 10), False)
+    pix.clear_with(200)
+    page.insert_image(pymupdf.Rect(300, 300, 350, 350), pixmap=pix)
+    result = extract(doc.tobytes())
+    assert [l.text for l in result.lines] == ["1 Introduction", "Body text here about widgets."]
+    assert result.rotated_text == "arXiv:2103.01234v2 [cs.LG] 4 Mar 2021"  # kept apart from the body
+    assert [s.title for s in result.sections] == ["Introduction"]
+    assert result.sections[0].text == "Body text here about widgets."
+
+
 def test_inline_abstract_starts_an_abstract_section():
     data = build_pdf([[("Abstract: We propose widgets for testing and evaluate them.", 10, False)]])
     sections = extract(data).sections
@@ -194,12 +212,21 @@ def make_section(title, paragraphs, page=1):
     return Section(title, page, page, [(p, page) for p in paragraphs])
 
 
-def test_chunks_respect_target_size_and_merge_short_tail():
+def test_chunks_fill_up_to_the_target_size():
     para = " ".join(["word"] * 100)
     chunks = chunk_sections([make_section("Method", [para, para, para, " ".join(["tail"] * 10)])])
-    sizes = [len(c.text.split()) for c in chunks]
-    assert sizes == [200, 110]  # 100+100, then 100 + the 10-word tail merged in
+    # 100+100 fit in 250 words; a third paragraph would not, so it starts the next chunk
+    assert [len(c.text.split()) for c in chunks] == [200, 110]
     assert all(c.section == "Method" for c in chunks)
+    assert chunks[1].text.split("\n\n") == [para, " ".join(["tail"] * 10)]  # paragraphs kept apart
+
+
+def test_short_tail_is_merged_into_the_previous_chunk():
+    section = Section("Method", 2, 3, [(" ".join(["body"] * 240), 2), (" ".join(["tail"] * 30), 3)])
+    [chunk] = chunk_sections([section])  # a 30-word tail is below CHUNK_MIN_WORDS, so it isn't its own chunk
+    assert len(chunk.text.split()) == 270
+    assert chunk.text.endswith("tail")
+    assert (chunk.page_start, chunk.page_end) == (2, 3)
 
 
 def test_long_paragraph_is_split_at_sentences_then_words():
