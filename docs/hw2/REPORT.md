@@ -153,23 +153,25 @@ mentioned in the agent's report but not tested; I confirmed it by hand and the a
 a test for it in Round 2.
 
 **1. DOI normalisation.** `normalize_doi("doi: 10.1234/ABC")` returns `" 10.1234/abc"` with a leading space: whitespace is stripped *before* the `doi:` prefix is removed, so duplicate detection misses the common printed form.  
-*Detected by* `test_library_service.py::test_normalize_doi_handles_space_after_doi_prefix`
+*Detected by* `test_library_service.py::test_normalize_doi_handles_space_after_doi_prefix`. Issue [#18](https://github.com/andres9403/ai-research-assistant/issues/18)
 
-**2. Whitespace-only title.** `POST /api/papers` with title `"   "` returns 201, although editing refuses blank titles ("a paper always keeps a title").  
-*Detected by* `test_papers_api.py::test_save_paper_rejects_whitespace_only_title`
+**2. Whitespace-only title.** `POST /api/papers` with title `"   "` returns 201, although an edit to a blank title is ignored ("a paper always keeps a title").  
+*Detected by* `test_papers_api.py::test_save_paper_rejects_whitespace_only_title`. Issue [#19](https://github.com/andres9403/ai-research-assistant/issues/19)
 
 **3. Body text dropped.** In `split_sections`, the branch that relabels text before a late first heading as "Full text" is dead code: front matter always starts on page 1, so `page_start > 2` is never true. Pages of body text are left out of chunking, so summaries and Q&A never see them.  
-*Detected by* `test_pdf_processing.py::test_text_before_a_late_first_heading_is_kept_as_full_text`
+*Detected by* `test_pdf_processing.py::test_text_before_a_late_first_heading_is_kept_as_full_text`. Issue [#20](https://github.com/andres9403/ai-research-assistant/issues/20)
 
 **4. Failed retry breaks a ready paper.** `POST /pdf/fetch` is allowed on an already-processed paper; if that download fails, the status becomes `no_pdf` although the PDF and chunks are intact, so summary and Q&A return 409. Reachable through the API only: the UI hides the button when a PDF exists.  
-*Detected by* `test_upload_and_pipeline.py::test_failed_retry_keeps_an_already_processed_paper_ready`
+*Detected by* `test_upload_and_pipeline.py::test_failed_retry_keeps_an_already_processed_paper_ready`. Issue [#21](https://github.com/andres9403/ai-research-assistant/issues/21)
 
 **5. Model names mangled in titles *(found in Round 2)*.** The footnote-mark regex strips digits after letters, so a heuristic title "YOLOv3: An Incremental Improvement" becomes "YOLOv: …" and "ResNet50" becomes "ResNet".  
-*Detected by* `test_upload_and_pipeline.py::test_upload_keeps_model_names_in_a_heuristic_title` (2 cases)
+*Detected by* `test_upload_and_pipeline.py::test_upload_keeps_model_names_in_a_heuristic_title` (2 cases). Issue [#22](https://github.com/andres9403/ai-research-assistant/issues/22)
 
 Following the assignment, the app was **not** changed to make these tests pass. They stay
 as strict xfails, so each one turns into a failure the moment its bug is fixed and
 reminds whoever fixes it to remove the marker. The HW1 suite found none of these bugs.
+
+Each bug is filed as a GitHub issue ([#18](https://github.com/andres9403/ai-research-assistant/issues/18)–[#22](https://github.com/andres9403/ai-research-assistant/issues/22)). Each issue gives the symptom, the code location, the xfail test that reproduces it, and acceptance criteria. The criteria include removing the test's xfail marker. The fixes are deliberately left until after submission, so the app evaluated here stays unchanged. They will go through a gated issue-to-PR pipeline. In that pipeline, one agent confirms the reproduction and a second implements the fix. An agent review and two human approvals follow, and nothing merges automatically.
 
 ### 2.4 Fault detection: seeded faults
 
@@ -446,6 +448,7 @@ amount:
 - **Raw results:** `docs/hw2/results/` (pytest output, coverage JSON and mutation JSON for
   every version).
 - **Agent prompts:** `docs/hw2/AGENT_LOG.md`.
+- **Bug reports:** issues #18–#22 (label `bug`).
 - **Suite snapshots:** commits `666b421` (initial) and `84f5a35` (Round 1).
 
 ```bash
