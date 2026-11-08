@@ -45,13 +45,19 @@ def test_normalize_doi_strips_prefixes_and_lowercases(doi, expected):
     assert normalize_doi(doi) == expected
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SUSPECTED BUG: normalize_doi strips whitespace before removing the 'doi:' prefix, so the "
-    "common printed form 'doi: 10.x/y' keeps a leading space and no longer matches the same DOI.",
+@pytest.mark.parametrize(
+    "doi, expected",
+    [
+        ("doi: 10.1234/ABC", "10.1234/abc"),
+        ("DOI: 10.1234/ABC", "10.1234/abc"),
+        ("doi:   10.1234/ABC", "10.1234/abc"),
+        ("doi:\t10.1234/ABC", "10.1234/abc"),
+        ("  DOI:  10.1234/ABC  ", "10.1234/abc"),
+        ("doi:   ", None),
+    ],
 )
-def test_normalize_doi_handles_space_after_doi_prefix():
-    assert normalize_doi("doi: 10.1234/ABC") == "10.1234/abc"
+def test_normalize_doi_handles_space_after_doi_prefix(doi, expected):
+    assert normalize_doi(doi) == expected
 
 
 # ----------------------------------------------------------------------- DuplicateIndex
