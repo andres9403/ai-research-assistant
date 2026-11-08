@@ -81,12 +81,12 @@ def test_save_paper_rejects_whitespace_only_title(client, title):
     assert client.get("/api/papers").json() == []
 
 
-def test_save_paper_preserves_nonblank_title(client):
+def test_save_paper_strips_title_padding(client):
     title = "  A Study of Widgets  "
     response = client.post("/api/papers", json={"source": "s2", "title": title})
     assert response.status_code == 201
-    assert response.json()["title"] == title
-    assert client.get(f"/api/papers/{response.json()['id']}").json()["title"] == title
+    assert response.json()["title"] == "A Study of Widgets"
+    assert client.get(f"/api/papers/{response.json()['id']}").json()["title"] == "A Study of Widgets"
 
 
 def test_legacy_blank_title_remains_readable(client, session):

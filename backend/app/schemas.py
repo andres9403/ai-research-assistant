@@ -23,7 +23,8 @@ class PaperCreate(PaperBase):
     @field_validator("title")
     @classmethod
     def not_blank(cls, value: str) -> str:
-        if not value.strip():
+        value = value.strip()
+        if not value:
             raise ValueError("Title is empty")
         return value
 
