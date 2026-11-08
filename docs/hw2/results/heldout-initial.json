@@ -1,0 +1,172 @@
+{
+  "test_dir": "tests_hw2",
+  "set": "heldout",
+  "mutants": 18,
+  "killed": 18,
+  "score": 1.0,
+  "survived": [],
+  "results": [
+    {
+      "id": "H01",
+      "file": "app/services/search.py",
+      "requirement": "S2 results with only an arXiv id get an arXiv PDF link",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_semantic_scholar_results_are_normalised",
+      "seconds": 15.1
+    },
+    {
+      "id": "H02",
+      "file": "app/services/search.py",
+      "requirement": "A key is only suggested when the search had none",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_rate_limited_keyless_search_suggests_a_key",
+      "seconds": 14.8
+    },
+    {
+      "id": "H03",
+      "file": "app/services/search.py",
+      "requirement": "arXiv queries drop stopwords",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_arxiv_request_builds_and_query_with_filters",
+      "seconds": 14.1
+    },
+    {
+      "id": "H04",
+      "file": "app/services/search.py",
+      "requirement": "Local author filter/sort fetch a full page of S2 matches",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_author_filter_and_sorting_are_applied_locally_on_semantic_scholar",
+      "seconds": 14.5
+    },
+    {
+      "id": "H05",
+      "file": "app/services/library.py",
+      "requirement": "Library can be filtered by source",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_list_papers_filters_by_source_and_year",
+      "seconds": 11.9
+    },
+    {
+      "id": "H06",
+      "file": "app/services/library.py",
+      "requirement": "Punctuation doesn't hide a duplicate title",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_normalize_title_ignores_case_punctuation_and_accents[Attention",
+      "seconds": 11.8
+    },
+    {
+      "id": "H07",
+      "file": "app/services/chat.py",
+      "requirement": "Follow-up questions are also searched joined to the previous one",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_search_queries_join_follow_ups_to_previous_question",
+      "seconds": 17.4
+    },
+    {
+      "id": "H08",
+      "file": "app/services/chat.py",
+      "requirement": "Conversation history stays within its token budget",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_history_drops_turns_beyond_token_budget",
+      "seconds": 17.6
+    },
+    {
+      "id": "H09",
+      "file": "app/services/retrieval.py",
+      "requirement": "Without an abstract, the first chunk is the anchor",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_anchors_are_abstract_and_conclusion_or_first_chunk",
+      "seconds": 17.9
+    },
+    {
+      "id": "H10",
+      "file": "app/services/summaries.py",
+      "requirement": "Summary context favours abstract/conclusion over other sections",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_select_context_prefers_important_sections_and_keeps_paper_order",
+      "seconds": 17.6
+    },
+    {
+      "id": "H11",
+      "file": "app/services/pdf.py",
+      "requirement": "Only margin text repeated on many pages is a running head",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_pdf_processing.py::test_single_margin_line_that_does_not_repeat_is_kept",
+      "seconds": 15.5
+    },
+    {
+      "id": "H12",
+      "file": "app/services/pdf.py",
+      "requirement": "Unnumbered ambiguous headings ('Results') need a larger font",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_pdf_processing.py::test_heading_name[Results-kwargs6-None]",
+      "seconds": 14.9
+    },
+    {
+      "id": "H13",
+      "file": "app/services/metadata.py",
+      "requirement": "Heuristic titles shorter than 8 characters are rejected",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_metadata.py::test_clean_title[Short-None]",
+      "seconds": 13.7
+    },
+    {
+      "id": "H14",
+      "file": "app/services/api_keys.py",
+      "requirement": ".env is readable by its owner only (0600)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_settings_api.py::test_write_env_appends_and_creates_owner_only_file",
+      "seconds": 18.3
+    },
+    {
+      "id": "H15",
+      "file": "app/services/pipeline.py",
+      "requirement": "A download isn't queued twice while one is running",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_papers_api.py::test_fetch_pdf_while_busy_is_409",
+      "seconds": 14.9
+    },
+    {
+      "id": "H16",
+      "file": "app/routers/upload.py",
+      "requirement": "Upload answers 200 (not 201) when it attached to an existing paper",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_upload_and_pipeline.py::test_upload_attaches_to_a_saved_paper_without_pdf",
+      "seconds": 19.4
+    },
+    {
+      "id": "H17",
+      "file": "app/services/llm.py",
+      "requirement": "An unknown provider name is a clear 'Unknown LLM provider' error",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_summary_with_unavailable_provider_is_503[bogus-Unknown",
+      "seconds": 11.5
+    },
+    {
+      "id": "H18",
+      "file": "app/routers/ai.py",
+      "requirement": "No summary is generated for a paper without full text (409)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_summary_of_paper_without_text_is_409",
+      "seconds": 10.0
+    }
+  ]
+}

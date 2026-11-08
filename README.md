@@ -270,6 +270,8 @@ backend/
     services/         business logic: search, pdf, pipeline, metadata,
                       embeddings, retrieval, llm, summaries, chat
   tests/              pytest suite; mocks the LLM and every external HTTP call
+  tests_hw2/          HW2: agent-generated suite (see docs/hw2/)
+  hw2_eval/           HW2: seeded-fault harness for scoring a suite
 frontend/
   src/
     views/            Search, Library, Paper detail
@@ -277,6 +279,7 @@ frontend/
 docs/
   PLANNING.md         design decisions and milestones
   TUTORIAL.md         step-by-step walkthrough and demo-video script
+  hw2/                HW2 report, agent prompt log and raw results
 data/                 created at runtime, git-ignored
 start.sh, start.ps1   one-command setup and start
 .github/workflows/    CI: backend tests, frontend tests and build, start scripts
@@ -290,6 +293,8 @@ cd backend
 ```
 
 The suite uses a temporary data directory and mocks the LLM providers, the embedding model and all external HTTP calls, so it needs no API keys or network access.
+
+The HW2 agent-generated suite runs separately with `.venv/bin/python -m pytest tests_hw2 -q`; [docs/hw2/README.md](docs/hw2/README.md) explains how to reproduce its coverage and fault-detection results, and [docs/hw2/REPORT.md](docs/hw2/REPORT.md) is the report.
 
 To run the frontend tests and check that it compiles, run `npm test` and `npm run build` from `frontend/`.
 

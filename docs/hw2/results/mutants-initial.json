@@ -1,0 +1,373 @@
+{
+  "test_dir": "tests_hw2",
+  "mutants": 40,
+  "killed": 37,
+  "score": 0.925,
+  "survived": [
+    "M08",
+    "M33",
+    "M38"
+  ],
+  "results": [
+    {
+      "id": "M01",
+      "file": "app/services/library.py",
+      "requirement": "DOI URLs/prefixes are normalised so duplicates match",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_normalize_doi_strips_prefixes_and_lowercases[https://doi.org/10.1234/X-10.1234/x]",
+      "seconds": 11.6
+    },
+    {
+      "id": "M02",
+      "file": "app/services/library.py",
+      "requirement": "Accents don't hide a duplicate title",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_normalize_title_ignores_case_punctuation_and_accents[Caf\\xe9",
+      "seconds": 11.2
+    },
+    {
+      "id": "M03",
+      "file": "app/services/library.py",
+      "requirement": "Duplicates match on (source, external id)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_duplicate_index_matches_by_doi_external_id_then_title",
+      "seconds": 11.8
+    },
+    {
+      "id": "M04",
+      "file": "app/services/library.py",
+      "requirement": "Editing can't blank a paper's title",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_update_paper_keeps_title_when_blank",
+      "seconds": 11.4
+    },
+    {
+      "id": "M05",
+      "file": "app/services/library.py",
+      "requirement": "An edited paper is not a duplicate of itself",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_update_paper_keeps_title_when_blank",
+      "seconds": 11.5
+    },
+    {
+      "id": "M06",
+      "file": "app/services/library.py",
+      "requirement": "User edits mark metadata_source='edited'",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_update_paper_applies_and_cleans_edits",
+      "seconds": 11.4
+    },
+    {
+      "id": "M07",
+      "file": "app/services/library.py",
+      "requirement": "Library lists newest papers first",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_list_papers_newest_first",
+      "seconds": 11.6
+    },
+    {
+      "id": "M08",
+      "file": "app/services/library.py",
+      "requirement": "year_to filter is inclusive",
+      "killed": false,
+      "exit_code": 0,
+      "killed_by": null,
+      "seconds": 19.4
+    },
+    {
+      "id": "M09",
+      "file": "app/services/library.py",
+      "requirement": "Library search also matches abstracts",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_library_service.py::test_list_papers_text_search_covers_title_abstract_and_authors",
+      "seconds": 10.6
+    },
+    {
+      "id": "M10",
+      "file": "app/routers/papers.py",
+      "requirement": "Deleting a paper deletes its stored PDF",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_papers_api.py::test_delete_removes_paper_its_pdf_and_dependents",
+      "seconds": 13.3
+    },
+    {
+      "id": "M11",
+      "file": "app/routers/upload.py",
+      "requirement": "Can't attach a PDF while one is being processed (409)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_upload_and_pipeline.py::test_attach_while_busy_is_409",
+      "seconds": 17.6
+    },
+    {
+      "id": "M12",
+      "file": "app/routers/ai.py",
+      "requirement": "Summaries are cached unless refresh=true",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_summary_is_generated_from_selected_sections_and_cached",
+      "seconds": 9.4
+    },
+    {
+      "id": "M13",
+      "file": "app/routers/ai.py",
+      "requirement": "LLM failures during Q&A answer 502",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_unusable_answers_are_502_and_not_saved[data0-cited",
+      "seconds": 9.9
+    },
+    {
+      "id": "M14",
+      "file": "app/routers/ai.py",
+      "requirement": "DELETE /chat clears the thread",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_clear_chat_deletes_the_thread",
+      "seconds": 10.3
+    },
+    {
+      "id": "M15",
+      "file": "app/routers/search.py",
+      "requirement": "A blank search query is rejected (422)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_search_endpoint_validates_parameters[params2]",
+      "seconds": 14.0
+    },
+    {
+      "id": "M16",
+      "file": "app/services/chat.py",
+      "requirement": "Citations are renumbered 1, 2, \u2026 in order of first use",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_question_is_answered_with_renumbered_citations",
+      "seconds": 9.3
+    },
+    {
+      "id": "M17",
+      "file": "app/services/chat.py",
+      "requirement": "An answer citing no passage is rejected unless found=false",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_unusable_answers_are_502_and_not_saved[data0-cited",
+      "seconds": 10.4
+    },
+    {
+      "id": "M18",
+      "file": "app/services/chat.py",
+      "requirement": "Conversation history starts on a user question",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_history_never_starts_with_an_answer",
+      "seconds": 15.0
+    },
+    {
+      "id": "M19",
+      "file": "app/services/summaries.py",
+      "requirement": "Empty summary fields get the 'Not described' placeholder",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_ai_api.py::test_summary_fields_missing_from_llm_get_placeholder",
+      "seconds": 9.1
+    },
+    {
+      "id": "M20",
+      "file": "app/services/summaries.py",
+      "requirement": "Summary context stays within the token budget",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_select_context_prefers_important_sections_and_keeps_paper_order",
+      "seconds": 14.8
+    },
+    {
+      "id": "M21",
+      "file": "app/services/retrieval.py",
+      "requirement": "Retrieved chunks stay within the token budget",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_retrieve_respects_the_token_budget",
+      "seconds": 15.2
+    },
+    {
+      "id": "M22",
+      "file": "app/services/retrieval.py",
+      "requirement": "Retrieved excerpts are returned in paper order",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_summaries_chat_retrieval.py::test_retrieve_returns_anchors_plus_best_matches_in_paper_order",
+      "seconds": 15.4
+    },
+    {
+      "id": "M23",
+      "file": "app/services/api_keys.py",
+      "requirement": "Key-shaped text only (no newlines \u2192 no .env injection)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_settings_api.py::test_malformed_keys_are_422_and_not_saved[has",
+      "seconds": 14.6
+    },
+    {
+      "id": "M24",
+      "file": "app/services/api_keys.py",
+      "requirement": "Saving a key replaces the existing .env line in place",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_settings_api.py::test_removing_an_llm_key",
+      "seconds": 14.7
+    },
+    {
+      "id": "M25",
+      "file": "app/services/api_keys.py",
+      "requirement": "Removing a key stops the running backend using it",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_settings_api.py::test_removing_an_llm_key",
+      "seconds": 15.2
+    },
+    {
+      "id": "M26",
+      "file": "app/services/search.py",
+      "requirement": "Empty Semantic Scholar results fall back to arXiv",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_empty_semantic_scholar_results_fall_back_to_arxiv",
+      "seconds": 13.5
+    },
+    {
+      "id": "M27",
+      "file": "app/services/search.py",
+      "requirement": "Author filter matches word prefixes (\"a vaswani\")",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_author_filter_and_sorting_are_applied_locally_on_semantic_scholar",
+      "seconds": 14.0
+    },
+    {
+      "id": "M28",
+      "file": "app/services/search.py",
+      "requirement": "sort=citations puts the most cited first",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_author_filter_and_sorting_are_applied_locally_on_semantic_scholar",
+      "seconds": 14.2
+    },
+    {
+      "id": "M29",
+      "file": "app/services/search.py",
+      "requirement": "arXiv ids drop their version suffix",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_metadata.py::test_arxiv_lookup_by_id_and_by_title",
+      "seconds": 11.8
+    },
+    {
+      "id": "M30",
+      "file": "app/schemas.py",
+      "requirement": "year_from later than year_to is rejected",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_search.py::test_search_filters_validation",
+      "seconds": 13.4
+    },
+    {
+      "id": "M31",
+      "file": "app/services/http.py",
+      "requirement": "PDF downloads refuse private/loopback addresses (SSRF guard)",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_upload_and_pipeline.py::test_public_addresses_blocks_private_and_mixed_hosts[addresses0]",
+      "seconds": 17.3
+    },
+    {
+      "id": "M32",
+      "file": "app/services/pipeline.py",
+      "requirement": "A link to an HTML page is reported as 'not a PDF file'",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_upload_and_pipeline.py::test_failed_download_leaves_paper_without_pdf_and_explains[response1-the",
+      "seconds": 17.0
+    },
+    {
+      "id": "M33",
+      "file": "app/services/pipeline.py",
+      "requirement": "PDF metadata only fills blank fields, never overwrites",
+      "killed": false,
+      "exit_code": 0,
+      "killed_by": null,
+      "seconds": 17.7
+    },
+    {
+      "id": "M34",
+      "file": "app/services/pipeline.py",
+      "requirement": "Uploading a PDF of a paper that already has one \u2192 409",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_upload_and_pipeline.py::test_uploading_the_same_pdf_twice_is_409",
+      "seconds": 15.5
+    },
+    {
+      "id": "M35",
+      "file": "app/services/pipeline.py",
+      "requirement": "Restart recovery keeps chunked papers 'ready'",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_upload_and_pipeline.py::test_startup_recovers_papers_left_mid_pipeline",
+      "seconds": 16.0
+    },
+    {
+      "id": "M36",
+      "file": "app/services/pipeline.py",
+      "requirement": "A new PDF invalidates the cached summary",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_upload_and_pipeline.py::test_replacing_a_pdf_clears_summary_and_chat",
+      "seconds": 15.8
+    },
+    {
+      "id": "M37",
+      "file": "app/services/pdf.py",
+      "requirement": "Token estimate rounds up (ceil(len/3))",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_pdf_processing.py::test_estimate_tokens[abcd-2]",
+      "seconds": 12.2
+    },
+    {
+      "id": "M38",
+      "file": "app/services/metadata.py",
+      "requirement": "Lookups only accept near-identical titles (\u22650.9)",
+      "killed": false,
+      "exit_code": 0,
+      "killed_by": null,
+      "seconds": 14.7
+    },
+    {
+      "id": "M39",
+      "file": "app/services/llm.py",
+      "requirement": "LLM_PROVIDER picks the default provider when it has a key",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_llm.py::test_default_name_prefers_configured_provider",
+      "seconds": 8.2
+    },
+    {
+      "id": "M40",
+      "file": "app/services/llm.py",
+      "requirement": "LLM JSON that isn't an object is rejected",
+      "killed": true,
+      "exit_code": 1,
+      "killed_by": "tests_hw2/test_llm.py::test_parse_accepts_objects_only",
+      "seconds": 8.3
+    }
+  ]
+}

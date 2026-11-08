@@ -1,0 +1,29 @@
+................................................x....................... [ 18%]
+........................................................................ [ 37%]
+....x.................................................x................. [ 56%]
+........................................................................ [ 75%]
+.......................................................................x [ 94%]
+...................                                                      [100%]
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.11.13-final-0 _______________
+
+Name                         Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------
+app/services/chat.py            84      0     24      1    99%   142->139
+app/services/embeddings.py      57      1      6      0    98%   75
+app/services/metadata.py       194      0     76      2    99%   119->123, 145->144
+app/services/pdf.py            238      2     74      4    98%   167, 304, 346->353, 371->374
+app/services/pipeline.py       166      0     36      2    99%   51->exit, 203->exit
+app/services/retrieval.py       73      0     28      1    99%   116->115
+app/services/search.py         181      0     62      2    99%   197->199, 293->290
+------------------------------------------------------------------------
+TOTAL                         1960      3    468     12    99%
+
+19 files skipped due to complete coverage.
+Coverage JSON written to file ../docs/hw2/results/coverage-round1.json
+=========================== short test summary info ============================
+XFAIL tests_hw2/test_library_service.py::test_normalize_doi_handles_space_after_doi_prefix - SUSPECTED BUG: normalize_doi strips whitespace before removing the 'doi:' prefix, so the common printed form 'doi: 10.x/y' keeps a leading space and no longer matches the same DOI.
+XFAIL tests_hw2/test_papers_api.py::test_save_paper_rejects_whitespace_only_title - SUSPECTED BUG: PaperCreate only requires min_length=1, so a whitespace-only title is saved, although update_paper guarantees 'a paper always keeps a title' and refuses blank titles on edit.
+XFAIL tests_hw2/test_pdf_processing.py::test_text_before_a_late_first_heading_is_kept_as_full_text - SUSPECTED BUG: split_sections means to relabel text before a late first heading as 'Full text' (`sections[0].page_start > 2`), but the front-matter Section is created with page_start=1 and page_start is never updated, so the branch is dead: pages of body text before a late heading stay 'Front matter' and are silently dropped from chunking (no Q&A/summary on them).
+XFAIL tests_hw2/test_upload_and_pipeline.py::test_failed_retry_keeps_an_already_processed_paper_ready - SUSPECTED BUG: retrying the open-access download (POST /pdf/fetch) for a paper that is already processed and ready is allowed, and if that retry fails download_pdf sets status='no_pdf' although the stored PDF and chunks are untouched, so has_pdf is true but summary/Q&A answer 409 'full text isn't available'. recover_interrupted() shows the intended rule: a paper with chunks stays 'ready'.
+375 passed, 4 xfailed in 6.71s
