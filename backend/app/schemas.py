@@ -20,6 +20,13 @@ class PaperCreate(PaperBase):
 
     source: Literal["s2", "arxiv"]
 
+    @field_validator("title")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Title is empty")
+        return value
+
 
 class SearchResult(PaperCreate):
     saved_id: int | None = None  # library id when this paper is already saved
