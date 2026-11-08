@@ -194,11 +194,12 @@ def download_pdf(paper_id: int) -> None:
             ingest(session, paper, data)
             embed(session, paper)
         except (DownloadError, PdfError) as exc:
-            # A failed retry leaves the previous PDF and its usable chunks intact.
-            paper.status = "ready" if paper.chunks else "no_pdf"
-            paper.status_detail = (
-                None if paper.chunks else f"The open-access PDF couldn't be used: {exc}. {UPLOAD_HINT}"
-            )
+            if paper.chunks:  # a failed retry leaves the previous PDF and its chunks intact
+                log.warning("Re-fetching the PDF of paper %s failed, keeping the current one: %s", paper_id, exc)
+                paper.status, paper.status_detail = "ready", None
+            else:
+                paper.status = "no_pdf"
+                paper.status_detail = f"The open-access PDF couldn't be used: {exc}. {UPLOAD_HINT}"
             session.commit()
         except Exception:
             log.exception("PDF pipeline failed for paper %s", paper_id)
