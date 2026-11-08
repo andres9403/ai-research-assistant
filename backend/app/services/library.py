@@ -20,7 +20,7 @@ def normalize_title(title: str) -> str:
 def normalize_doi(doi: str | None) -> str | None:
     if not doi:
         return None
-    doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", doi.strip(), flags=re.I)
+    doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", doi.strip(), flags=re.I).strip()
     return doi.lower() or None
 
 

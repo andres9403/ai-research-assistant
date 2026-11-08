@@ -129,4 +129,6 @@ def test_normalisers():
     assert normalize_title("深度学习：综述") == "深度学习 综述"
     assert normalize_doi("https://doi.org/10.1000/ABC") == "10.1000/abc"
     assert normalize_doi("doi:10.1/X") == "10.1/x"
+    assert normalize_doi("doi: 10.1234/ABC") == "10.1234/abc"
+    assert normalize_doi("  https://doi.org/ 10.1/X ") == "10.1/x"
     assert normalize_doi("") is None
