@@ -185,13 +185,6 @@ def test_front_matter_before_an_early_heading_is_not_chunked():
     assert [c.section for c in chunk_sections(sections)] == ["Introduction"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SUSPECTED BUG: split_sections means to relabel text before a late first heading as "
-    "'Full text' (`sections[0].page_start > 2`), but the front-matter Section is created with "
-    "page_start=1 and page_start is never updated, so the branch is dead: pages of body text before "
-    "a late heading stay 'Front matter' and are silently dropped from chunking (no Q&A/summary on them).",
-)
 def test_text_before_a_late_first_heading_is_kept_as_full_text():
     body = " ".join(["word"] * 80)
     lines = [line(f"{body} {page}", page=page, block=page) for page in range(4)]  # pages 1-4 of prose
@@ -199,6 +192,36 @@ def test_text_before_a_late_first_heading_is_kept_as_full_text():
     sections = split_sections(lines, body_size=10.0)
     assert sections[0].title == FULL_TEXT
     assert FULL_TEXT in {c.section for c in chunk_sections(sections)}
+
+
+@pytest.mark.parametrize("heading_page, first_title", [(1, FRONT_MATTER), (2, FRONT_MATTER), (3, FULL_TEXT)])
+def test_first_heading_page_controls_whether_opening_text_is_chunked(heading_page, first_title):
+    opening = [line(f"Opening prose on page {p + 1}.", page=p, block=p)
+               for p in range(max(1, heading_page - 1))]
+    lines = opening + [line("Introduction", page=heading_page - 1, bold=True, block=10),
+                       line("Body.", page=heading_page - 1, block=11)]
+    sections = split_sections(lines, body_size=10.0)
+    assert [s.title for s in sections] == [first_title, "Introduction"]
+    assert (sections[0].page_start, sections[0].page_end) == (1, max(1, heading_page - 1))
+    chunks = chunk_sections(sections)
+    assert [c.text for c in chunks if c.section == FULL_TEXT] == (
+        ["\n\n".join(l.text for l in opening)] if first_title == FULL_TEXT else []
+    )
+    assert FRONT_MATTER not in {c.section for c in chunks}
+
+
+@pytest.mark.parametrize("heading_page, first_title", [(2, FRONT_MATTER), (3, FULL_TEXT)])
+def test_empty_first_heading_still_controls_opening_text(heading_page, first_title):
+    lines = [line("Opening prose.", page=0),
+             line("Introduction", page=heading_page - 1, bold=True, block=1),
+             line("Conclusion", page=4, bold=True, block=2), line("Done here.", page=4, block=3)]
+    sections = split_sections(lines, body_size=10.0)
+    assert [s.title for s in sections] == [first_title, "Conclusion"]
+    chunks = chunk_sections(sections)
+    assert [c.text for c in chunks if c.section == FULL_TEXT] == (
+        ["Opening prose."] if first_title == FULL_TEXT else []
+    )
+    assert FRONT_MATTER not in {c.section for c in chunks}
 
 
 # ----------------------------------------------------------------------- chunking

@@ -270,6 +270,7 @@ def _title_case(name: str) -> str:
 def split_sections(lines: list[Line], body_size: float) -> list[Section]:
     sections: list[Section] = []
     current = Section(FRONT_MATTER, 1, 1)
+    first_heading_page = None  # 1-based; retain even if its empty section is removed
     last_key = None  # (page, block) of the previous line, to spot paragraph breaks
 
     def add_text(text: str, line: Line, new_paragraph: bool):
@@ -286,6 +287,8 @@ def split_sections(lines: list[Line], body_size: float) -> list[Section]:
         inline = INLINE_ABSTRACT.match(line.text)
         name = "Abstract" if inline else heading_name(line, body_size)
         if name:
+            if first_heading_page is None:
+                first_heading_page = line.page + 1
             sections.append(current)
             current = Section(name, line.page + 1, line.page + 1)
             if inline:
@@ -300,7 +303,7 @@ def split_sections(lines: list[Line], body_size: float) -> list[Section]:
     if not has_headings:
         for s in sections:
             s.title = FULL_TEXT
-    elif sections and sections[0].title == FRONT_MATTER and sections[0].page_start > 2:
+    elif sections and sections[0].title == FRONT_MATTER and first_heading_page > 2:
         sections[0].title = FULL_TEXT  # headings only start late; this isn't front matter
     return sections
 
