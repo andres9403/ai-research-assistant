@@ -22,9 +22,11 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest tests_hw2 -q
 ```
 
-The run ends with `433 passed, 6 xfailed`. The xfails are strict: they document five
-real application bugs (one has two cases; see the report), and each turns into a failure
-once its bug is fixed.
+On `main` the run now ends with `449 passed, 3 xfailed`. The suite as evaluated in the
+report (commit `f47910c`) gave `433 passed, 6 xfailed`. The xfails are strict: each one
+documents a real application bug and turns into a failure once that bug is fixed, so the
+fix must delete the marker. Bugs 2–4 have since been fixed (PRs #24–#26); bugs 1 and 5
+(three xfail cases) are still open.
 
 ## Reproduce the coverage numbers
 

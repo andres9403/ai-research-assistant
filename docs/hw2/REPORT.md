@@ -23,7 +23,7 @@ and never shown.
 | Tests asserting only a status code | 17 | 6 | 5 |
 | References to private helpers | 13 | 15 | 2 |
 
-The tests found five real bugs in the app (Section 2.3). In every version they run in
+The tests found five real bugs in the app (Section 2.3). After the evaluation, three of them were fixed through reviewed PRs driven by the failing tests (Section 4.3). In every version they run in
 under 8 seconds and pass on repeated runs.
 
 ## 1. Test Generation Approach
@@ -171,7 +171,7 @@ Following the assignment, the app was **not** changed to make these tests pass. 
 as strict xfails, so each one turns into a failure the moment its bug is fixed and
 reminds whoever fixes it to remove the marker. The HW1 suite found none of these bugs.
 
-Each bug is filed as a GitHub issue ([#18](https://github.com/andres9403/ai-research-assistant/issues/18)–[#22](https://github.com/andres9403/ai-research-assistant/issues/22)). Each issue gives the symptom, the code location, the xfail test that reproduces it, and acceptance criteria. The criteria include removing the test's xfail marker. The fixes are deliberately left until after submission, so the app evaluated here stays unchanged. They will go through a gated issue-to-PR pipeline. In that pipeline, one agent confirms the reproduction and a second implements the fix. An agent review and two human approvals follow, and nothing merges automatically.
+Each bug is filed as a GitHub issue ([#18](https://github.com/andres9403/ai-research-assistant/issues/18)–[#22](https://github.com/andres9403/ai-research-assistant/issues/22)). Each issue gives the symptom, the code location, the xfail test that reproduces it, and acceptance criteria. The criteria include removing the test's xfail marker. The app was left unchanged for every measurement in this report. Afterwards, the fixes went through a gated issue-to-PR pipeline; Section 4.3 describes it, and as of submission three of the five bugs are fixed on `main`.
 
 ### 2.4 Fault detection: seeded faults
 
@@ -353,7 +353,7 @@ still 18/18 held-out faults**, and has 2 private references left.
 
 **Final coverage.** 2 statements are still uncovered:
 
-- `pdf.py:304` is the dead branch behind bug 3, so it cannot run until that bug is fixed;
+- `pdf.py:304` is the dead branch behind bug 3, so it cannot run until that bug is fixed (it has since been fixed and is now covered; see Section 4.3);
 - `pdf.py:167` is a whitespace-only text line that a generated PDF can't produce.
 
 The 11 partial branches left are loop exits.
@@ -385,6 +385,53 @@ evidence that Round 2 strengthened the suite generally is:
 - the boundary tests the agent added beyond the two faults it was told about;
 - the agent's own 24 extra boundary faults;
 - the 13 requirements that had no test before.
+
+### 4.3 After the evaluation: fixing the bugs
+
+The suite's job ended once it had found the bugs. But because every bug is a strict xfail,
+each one already came with an acceptance test, so I used those tests to drive the fixes.
+All numbers in Sections 1–4.2 describe the suite **before** any fix (commit `f47910c`).
+
+Each bug became a GitHub issue (#18–#22) that gives the reproducing test and acceptance
+criteria. Each issue then went through a gated issue-to-PR pipeline that alternates two
+agents:
+
+1. Claude Code reproduces the bug on `main` and posts the evidence.
+2. Codex implements the fix and opens a PR.
+3. Claude reviews the PR.
+4. Codex addresses the review.
+5. Claude checks the result.
+
+Every PR needs my approval twice before it can merge: once after the review, and once on
+the final version.
+
+| Bug | Issue | Fix PR | What the fix does | Status (Nov 8, 23:10) |
+|---|---|---|---|---|
+| 1. DOI normalisation | [#18](https://github.com/andres9403/ai-research-assistant/issues/18) | [#23](https://github.com/andres9403/ai-research-assistant/pull/23), outside contributor | strip again after removing the `doi:` prefix | reviewed and verified; waiting for fork CI approval |
+| 2. Whitespace-only title | [#19](https://github.com/andres9403/ai-research-assistant/issues/19) | [#24](https://github.com/andres9403/ai-research-assistant/pull/24) | `PaperCreate` trims the title and rejects a blank one (422) | **merged** |
+| 3. Body text dropped | [#20](https://github.com/andres9403/ai-research-assistant/issues/20) | [#26](https://github.com/andres9403/ai-research-assistant/pull/26) | test the page of the first heading, not the front matter's start page | **merged** |
+| 4. Failed retry | [#21](https://github.com/andres9403/ai-research-assistant/issues/21) | [#25](https://github.com/andres9403/ai-research-assistant/pull/25) | a paper with chunks stays `ready`, and the failure is logged | **merged** |
+| 5. Model names in titles | [#22](https://github.com/andres9403/ai-research-assistant/issues/22) | none yet | triaged; implementation waits for #21's pipeline, which shares its test file | in progress |
+
+What this showed:
+
+- **The strict xfails worked as acceptance tests.** Every fix had to delete exactly one
+  marker. The one PR that didn't, an outside contributor's PR #23, would have turned CI
+  red; the review caught this before merge, and the contributor updated the PR.
+- **Reviews found real if minor problems** beyond the bug itself:
+  - a created title kept the spaces around it while an edited one did not (#24);
+  - the fix for #21 threw away the reason a retry failed, so it now logs a warning (#25).
+- **Claiming files prevented conflicting parallel work.** #18–#21 ran at the same time,
+  but #22 had to wait for #21, because both edit `test_upload_and_pipeline.py`.
+- **There was operational friction.** Codex's sandbox could push commits but not call
+  the GitHub API, so it could not post its review replies. I posted the replies it had
+  prepared and recorded that stage as done by hand; the pipeline history notes this.
+
+**Result on `main`.** With the three merged fixes, the HW2 suite gives `449 passed,
+3 xfailed`; the 3 xfails are bugs 1 and 5, which are still open. The HW1 suite still passes
+(279 tests). Coverage is unchanged at 99.9%, with one statement uncovered instead of two:
+fixing bug 3 made its dead branch reachable, and a test now runs it. All 58 seeded-fault
+snippets still apply to the fixed code, so the fault-detection harness still works.
 
 ## 5. Reflection
 
@@ -448,13 +495,13 @@ amount:
 - **Raw results:** `docs/hw2/results/` (pytest output, coverage JSON and mutation JSON for
   every version).
 - **Agent prompts:** `docs/hw2/AGENT_LOG.md`.
-- **Bug reports:** issues #18–#22 (label `bug`).
+- **Bug reports:** issues #18–#22 (label `bug`); fixes in PRs #23–#26 (Section 4.3).
 - **Suite snapshots:** commits `666b421` (initial) and `84f5a35` (Round 1).
 
 ```bash
 cd backend
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest tests_hw2 -q                                   # 433 passed, 6 xfailed
+.venv/bin/python -m pytest tests_hw2 -q    # 433 passed, 6 xfailed as evaluated; 449 passed, 3 xfailed on main after the fixes
 .venv/bin/python -m pytest tests_hw2 -q --cov=app --cov-branch --cov-report=term-missing
 .venv/bin/python -m hw2_eval.run_mutants tests_hw2 --out /tmp/main.json            # 40 faults
 .venv/bin/python -m hw2_eval.run_mutants tests_hw2 --set heldout --out /tmp/held.json  # 18 faults
