@@ -1,8 +1,19 @@
-# Homework 2: Test Generation and Improvement Using Coding Agents
+<h1 class="title">Test Generation and Improvement Using Coding Agents</h1>
+<p class="center">Andrés Cabeza</p>
+<p class="center">November 8, 2026</p>
 
-**Andres Cabeza** · AI Research Assistant (HW1 app) · November 2026
+**Repository:** <https://github.com/andres9403/ai-research-assistant>  
+**Final test suite:** `backend/tests_hw2/` · **Agent prompts:** `docs/hw2/AGENT_LOG.md`  
+**Coding agents:** Claude Opus 5.5 through Claude Code (test generation, reviews), with Codex for the bug fixes  
+**Application under test:** the HW1 AI Research Assistant (FastAPI, SQLite, PyMuPDF, Anthropic and OpenAI LLMs)
 
-Repository: <https://github.com/andres9403/ai-research-assistant> · final suite in `backend/tests_hw2/`
+### AI Usage Disclaimer
+
+Consistent with the subject of the assignment, this report was produced with an AI agent.
+Claude (Opus 5.5), the same Claude Code session that orchestrated the experiments, drafted
+it from the repository's recorded results, commit history, pull requests and issues. The
+author directed the work and made every human decision it describes: bug triage, review
+approvals and merges. The author remains responsible for its content.
 
 ## Summary
 
