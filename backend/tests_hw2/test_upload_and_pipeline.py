@@ -481,23 +481,31 @@ def test_download_task_ignores_papers_not_queued(session, download_server):
     assert seen == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SUSPECTED BUG (API-level only): POST /pdf/fetch is accepted for a paper that is already processed "
-    "and ready, and if that retry fails download_pdf sets status='no_pdf' although the stored PDF and chunks "
-    "are untouched, so has_pdf is true but summary/Q&A answer 409 'full text isn't available'. "
-    "recover_interrupted() shows the intended rule: a paper with chunks stays 'ready'. The frontend only shows "
-    "the 'Download open-access PDF' button when has_pdf is false, so users reach this through the API only.",
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(503),
+        httpx.Response(200, content=b"%PDF-1.4 corrupt" + b"\x00" * 20),
+    ],
+    ids=["download-error", "unreadable-pdf"],
 )
-def test_failed_retry_keeps_an_already_processed_paper_ready(client, session, download_server):
-    routes, _ = download_server
-    routes["https://oa.example.org/p.pdf"] = httpx.Response(503)
+def test_failed_retry_keeps_an_already_processed_paper_ready(client, session, download_server, response):
+    routes, seen = download_server
+    routes["https://oa.example.org/p.pdf"] = response
     paper = add_ready_paper(session, pdf_url="https://oa.example.org/p.pdf", pdf_path="x.pdf")
+    stored = paper_pdf()
+    (settings.pdf_dir / "x.pdf").write_bytes(stored)
+    chunks = client.get(f"/api/papers/{paper.id}/chunks").json()
+    assert len(chunks) == 5
+
     assert client.post(f"/api/papers/{paper.id}/pdf/fetch").status_code == 202
+    assert seen == ["https://oa.example.org/p.pdf"]
     body = client.get(f"/api/papers/{paper.id}").json()
-    assert body["has_pdf"] is True
-    assert len(client.get(f"/api/papers/{paper.id}/chunks").json()) == 5
     assert body["status"] == "ready"
+    assert body["status_detail"] is None
+    assert body["has_pdf"] is True
+    assert client.get(f"/api/papers/{paper.id}/chunks").json() == chunks
+    assert (settings.pdf_dir / "x.pdf").read_bytes() == stored
 
 
 def test_fetch_pdf_rejects_non_http_urls_without_a_request():
