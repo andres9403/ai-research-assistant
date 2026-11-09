@@ -411,7 +411,7 @@ the final version.
 | 2. Whitespace-only title | [#19](https://github.com/andres9403/ai-research-assistant/issues/19) | [#24](https://github.com/andres9403/ai-research-assistant/pull/24) | `PaperCreate` trims the title and rejects a blank one (422) | **merged** |
 | 3. Body text dropped | [#20](https://github.com/andres9403/ai-research-assistant/issues/20) | [#26](https://github.com/andres9403/ai-research-assistant/pull/26) | test the page of the first heading, not the front matter's start page | **merged** |
 | 4. Failed retry | [#21](https://github.com/andres9403/ai-research-assistant/issues/21) | [#25](https://github.com/andres9403/ai-research-assistant/pull/25) | a paper with chunks stays `ready`, and the failure is logged | **merged** |
-| 5. Model names in titles | [#22](https://github.com/andres9403/ai-research-assistant/issues/22) | none yet | triaged; implementation waits for #21's pipeline, which shares its test file | in progress |
+| 5. Model names in titles | [#22](https://github.com/andres9403/ai-research-assistant/issues/22) | none yet | triaged; waited for #21 (same test file), then Codex's sandbox lost GitHub API access | open |
 
 What this showed:
 
@@ -425,7 +425,8 @@ What this showed:
   but #22 had to wait for #21, because both edit `test_upload_and_pipeline.py`.
 - **There was operational friction.** Codex's sandbox could push commits but not call
   the GitHub API, so it could not post its review replies. I posted the replies it had
-  prepared and recorded that stage as done by hand; the pipeline history notes this.
+  prepared and recorded that stage as done by hand; the pipeline history notes this. The same
+  problem stopped Codex before it could start on #22.
 
 **Result on `main`.** With the three merged fixes, the HW2 suite gives `449 passed,
 3 xfailed`; the 3 xfails are bugs 1 and 5, which are still open. The HW1 suite still passes
