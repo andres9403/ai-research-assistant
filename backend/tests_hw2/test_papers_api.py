@@ -75,13 +75,26 @@ def test_save_paper_validates_payload(client, payload):
     assert client.get("/api/papers").json() == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SUSPECTED BUG: PaperCreate only requires min_length=1, so a whitespace-only title is saved, "
-    "although update_paper guarantees 'a paper always keeps a title' and refuses blank titles on edit.",
-)
-def test_save_paper_rejects_whitespace_only_title(client):
-    assert client.post("/api/papers", json={"source": "s2", "title": "   "}).status_code == 422
+@pytest.mark.parametrize("title", ["   ", "\t\n ", "\u00a0\u2003"])
+def test_save_paper_rejects_whitespace_only_title(client, title):
+    assert client.post("/api/papers", json={"source": "s2", "title": title}).status_code == 422
+    assert client.get("/api/papers").json() == []
+
+
+def test_save_paper_strips_title_padding(client):
+    title = "  A Study of Widgets  "
+    response = client.post("/api/papers", json={"source": "s2", "title": title})
+    assert response.status_code == 201
+    assert response.json()["title"] == "A Study of Widgets"
+    assert client.get(f"/api/papers/{response.json()['id']}").json()["title"] == "A Study of Widgets"
+
+
+def test_legacy_blank_title_remains_readable(client, session):
+    paper = add_paper(session, title="   ")
+    response = client.get("/api/papers")
+    assert response.status_code == 200
+    assert response.json()[0]["title"] == "   "
+    assert client.get(f"/api/papers/{paper.id}").status_code == 200
 
 
 def test_saved_library_survives_a_restart(client, session):
@@ -146,6 +159,15 @@ def test_patch_updates_only_given_fields(client, session):
     assert body["year"] == 2020
     assert body["abstract"] == "Keep this"
     assert body["metadata_source"] == "edited"
+
+
+@pytest.mark.parametrize("title", ["   ", "\t\n ", "\u00a0\u2003"])
+def test_patch_ignores_whitespace_only_title(client, session, title):
+    paper = add_paper(session, title="Original")
+    response = client.patch(f"/api/papers/{paper.id}", json={"title": title})
+    assert response.status_code == 200
+    assert response.json()["title"] == "Original"
+    assert client.get(f"/api/papers/{paper.id}").json()["title"] == "Original"
 
 
 @pytest.mark.parametrize("payload", [{"year": 999}, {"year": 2101}, {"title": ""}, {"authors": "Ann"}])
